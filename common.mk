@@ -140,6 +140,13 @@ PRODUCT_PACKAGES += \
     libaudiohw_legacy \
     libaudio-ril-interface
 
+# Audio Packages
+PRODUCT_PACKAGES += \
+    audio.primary.exynos4 \
+    audio.a2dp.default \
+    audio.usb.default \
+    libaudiohw_legacy
+
 # HAL
 PRODUCT_PACKAGES += \
     AdvancedDisplay \
