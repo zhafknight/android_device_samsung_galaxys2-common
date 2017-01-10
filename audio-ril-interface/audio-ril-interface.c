@@ -26,8 +26,25 @@
 #include <samsung-ril-socket.h>
 #include <srs-client.h>
 
-int galaxys2_mic_mute(void *pdata, int mute)
+int galaxys2_mic_mute(void *pdata, enum ril_mic_mute mute)
 {
+	struct srs_client *client;
+	struct srs_snd_mic_mute_data mic_mute_state;
+	int rc;
+
+	ALOGD("%s(%p, %d)", __func__, pdata, mute);
+
+	if (pdata == NULL)
+		return -1;
+
+	client = (struct srs_client *) pdata;
+
+	mic_mute_state.mute = mute;
+
+	rc = srs_client_send(client, SRS_SND_SET_MIC_MUTE, &mic_mute_state, sizeof(mic_mute_state));
+	if (rc < 0)
+		return -1;
+
 	return 0;
 }
 
