@@ -58,8 +58,7 @@ PRODUCT_COPY_FILES += \
 # Packages
 PRODUCT_PACKAGES := \
     com.android.future.usb.accessory \
-    SamsungServiceMode \
-    Snap
+    SamsungServiceMode
 
 # Legacy RIL
 PRODUCT_PACKAGES += \
@@ -92,8 +91,6 @@ PRODUCT_PACKAGES += \
     android.hardware.keymaster@3.0-impl \
     android.hardware.bluetooth@1.0-impl \
     libbt-vendor \
-    android.hardware.camera.provider@2.4-impl \
-    camera.smdk4210 \
     gralloc.exynos4 \
     hwcomposer.exynos4 \
     libnetcmdiface \
@@ -103,6 +100,18 @@ PRODUCT_PACKAGES += \
     libs5pjpeg \
     libfimg \
     libsecion
+
+#Camera
+PRODUCT_PACKAGES += \
+    android.hardware.camera.provider@2.4-impl-legacy \
+    camera.device@1.0-impl-legacy \
+    camera.smdk4210 \
+    Snap
+
+PRODUCT_PROPERTY_OVERRIDES += \
+    media.stagefright.legacyencoder=true \
+    media.stagefright.less-secure=true
+
 
 # HIDL manifest
 PRODUCT_COPY_FILES += \
