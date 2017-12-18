@@ -352,11 +352,12 @@ on boot
     write /proc/sys/vm/page-cluster 0
 
 # For RIL
-service cpboot-daemon /sbin/cbd -d -p 8
+service ipc-modem /system/bin/ipc-modem boot --debug
     class main
     user root
-    group radio cache inet misc audio sdcard_rw log sdcard_r
-    seclabel u:r:cpboot-daemon:s0
+    group radio cache inet misc audio sdcard_rw log
+    seclabel u:r:ipc-modem:s0
+    oneshot
 
 service charger /sbin/healthd -c
     class charger
