@@ -35,14 +35,38 @@ static const struct RIL_Env *mEnv;
 
 static void rilOnRequest(int request, void *data, size_t datalen, RIL_Token t)
 {
+    RLOGE("%s: BEGIN request:%d data:%p datalen:%d RIL_Token:%d", __func__, request, data, datalen, t);
     switch (request) {
         case RIL_REQUEST_GET_RADIO_CAPABILITY:
             RLOGW("Returning NOT_SUPPORTED on GET_RADIO_CAPABILITY");
             mEnv->OnRequestComplete(t, RIL_E_REQUEST_NOT_SUPPORTED, NULL, 0);
             break;
+        case RIL_REQUEST_RADIO_POWER:
+            RLOGW("RIL_REQUEST_RADIO_POWER...............LOS 15.x crashes from here.........................");
         default:
             mRealRadioFuncs->onRequest(request, data, datalen, t);
     }
+    RLOGE("%s: END", __func__);
+}
+
+static RIL_RadioState rilOnStateRequest() {
+    RLOGE("%s: BEGIN", __func__);
+    RIL_RadioState ret = mRealRadioFuncs->onStateRequest();
+    RLOGE("%s: END RIL_RadioState:%d", __func__, ret);
+    return ret;
+}
+
+static int rilSupports(int requestCode) {
+    RLOGE("%s: BEGIN requestCode:%d ", __func__, requestCode);
+    RIL_RadioState ret = mRealRadioFuncs->supports(requestCode);
+    RLOGE("%s: END result:%d", __func__, ret);
+    return ret;
+}
+
+static void rilCancel(RIL_Token t) {
+    RLOGE("%s: BEGIN RIL_Token:%d ", __func__, t);
+    mRealRadioFuncs->onCancel(t);
+    RLOGE("%s: END", __func__);
 }
 
 static void patchMem(void *libHandle) {
@@ -124,6 +148,9 @@ const RIL_RadioFunctions* RIL_Init(const struct RIL_Env *env, int argc, char **a
 	//copy the real RIL's info struct, then replace the onRequest pointer with our own
 	rilInfo = *mRealRadioFuncs;
 	rilInfo.onRequest = rilOnRequest;
+        rilInfo.onStateRequest = rilOnStateRequest;
+        rilInfo.supports = rilSupports;
+        rilInfo.onCancel = rilCancel;
 
 	RLOGD("Wrapped RIL version is '%s'\n", mRealRadioFuncs->getVersion());
 
