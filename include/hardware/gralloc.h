@@ -247,9 +247,6 @@ typedef struct gralloc_module_t {
     int (*unlock)(struct gralloc_module_t const* module,
             buffer_handle_t handle);
 
-    int (*getphys) (struct gralloc_module_t const* module,
-        buffer_handle_t handle, void** paddr);
-
     /* reserved for future use */
     int (*perform)(struct gralloc_module_t const* module,
             int operation, ... );
@@ -325,7 +322,10 @@ typedef struct gralloc_module_t {
             struct android_ycbcr *ycbcr, int fenceFd);
 
     /* reserved for future use */
-    void* reserved_proc[3];
+    void* reserved_proc[2];
+
+    int (*getphys) (struct gralloc_module_t const* module,
+        buffer_handle_t handle, void** paddr);
 } gralloc_module_t;
 
 /*****************************************************************************/
