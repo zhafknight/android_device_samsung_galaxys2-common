@@ -2006,6 +2006,7 @@ int exynos_camera_preview(struct exynos_camera *exynos_camera)
 	if (exynos_camera->recording_enabled && exynos_camera->recording_memory != NULL) {
 		pthread_mutex_lock(&exynos_camera->recording_mutex);
 
+		ALOGD("%s: Recording 1", __func__);
 		// V4L2
 
 		rc = exynos_v4l2_poll(exynos_camera, 2);
@@ -2017,24 +2018,28 @@ int exynos_camera_preview(struct exynos_camera *exynos_camera)
 			goto error_recording;
 		}
 
+		ALOGD("%s: Recording 2", __func__);
 		index = exynos_v4l2_dqbuf_cap(exynos_camera, 2);
 		if (index < 0) {
 			ALOGE("%s: dqbuf failed!", __func__);
 			goto error_recording;
 		}
 
+		ALOGD("%s: Recording 3", __func__);
 		recording_y_addr = exynos_v4l2_s_ctrl(exynos_camera, 2, V4L2_CID_PADDR_Y, index);
 		if (recording_y_addr == 0xffffffff) {
 			ALOGE("%s: s ctrl failed!", __func__);
 			goto error_recording;
 		}
 
+		ALOGD("%s: Recording 4", __func__);
 		recording_cbcr_addr = exynos_v4l2_s_ctrl(exynos_camera, 2, V4L2_CID_PADDR_CBCR, index);
 		if (recording_cbcr_addr == 0xffffffff) {
 			ALOGE("%s: s ctrl failed!", __func__);
 			goto error_recording;
 		}
 
+		ALOGD("%s: Recording 5", __func__);
 		addrs = (struct exynos_camera_addrs *) exynos_camera->recording_memory->data;
 
 		addrs[index].type = 0; // kMetadataBufferTypeCameraSource
@@ -2042,18 +2047,27 @@ int exynos_camera_preview(struct exynos_camera *exynos_camera)
 		addrs[index].cbcr = recording_cbcr_addr;
 		addrs[index].index = index;
 		addrs[index].reserved = 0;
+		ALOGD("%s: Recording 6", __func__);
 
 		pthread_mutex_unlock(&exynos_camera->recording_mutex);
 
 		if (EXYNOS_CAMERA_MSG_ENABLED(CAMERA_MSG_VIDEO_FRAME) && EXYNOS_CAMERA_CALLBACK_DEFINED(data_timestamp)) {
+		ALOGD("%s: Recording 7", __func__);
+
 			exynos_camera->callbacks.data_timestamp(timestamp, CAMERA_MSG_VIDEO_FRAME,
 				exynos_camera->recording_memory, index, exynos_camera->callbacks.user);
+		ALOGD("%s: Recording 8", __func__);
+
 		} else {
+		ALOGD("%s: Recording 9", __func__);
+
 			rc = exynos_v4l2_qbuf_cap(exynos_camera, 2, index);
 			if (rc < 0) {
 				ALOGE("%s: qbuf failed!", __func__);
 				goto error;
 			}
+		ALOGD("%s: Recording 10", __func__);
+
 		}
 	}
 
