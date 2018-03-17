@@ -152,7 +152,11 @@ PRODUCT_PACKAGES += \
     libOMX.SEC.WMV.Decoder \
     libOMX.SEC.AVC.Encoder \
     libSEC_OMX_Venc \
-    libOMX.SEC.M4V.Encoder
+    libOMX.SEC.M4V.Encoder \
+    libui_shim
+
+PRODUCT_COPY_FILES += \
+    $(COMMON_PATH)/configs/android.hardware.media.omx@1.0-service.rc:system/vendor/etc/init/android.hardware.media.omx@1.0-service.rc
 
 PRODUCT_COPY_FILES += \
     $(COMMON_PATH)/configs/media_codecs.xml:system/etc/media_codecs.xml \

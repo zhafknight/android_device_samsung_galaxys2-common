@@ -64,7 +64,15 @@ endif
 
 # Bionic
 TARGET_LD_SHIM_LIBS := \
-    /system/lib/libsec-ril.so|libsamsung_symbols.so
+    /system/lib/libsec-ril.so|libsamsung_symbols.so \
+
+TARGET_LD_SHIM_LIBS += \
+	/system/lib/omx/libOMX.SEC.AVC.Decoder.so|/system/lib/libui_shim.so \
+	/system/lib/omx/libOMX.SEC.AVC.Encoder.so|/system/lib/libui_shim.so \
+	/system/lib/omx/libOMX.SEC.MV4.Decoder.so|/system/lib/libui_shim.so \
+	/system/lib/omx/libOMX.SEC.MV4.Encoder.so|/system/lib/libui_shim.so \
+	/system/lib/omx/libOMX.SEC.WMV.Decoder.so|/system/lib/libui_shim.so
+
 
 WITH_DEXPREOPT_BOOT_IMG_AND_SYSTEM_SERVER_ONLY := true
 
