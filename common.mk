@@ -26,6 +26,9 @@ DONT_UNCOMPRESS_PRIV_APPS_DEXS := true
 DEVICE_PACKAGE_OVERLAYS := $(COMMON_PATH)/overlay \
     $(COMMON_PATH)/overlay-lineage
 
+# RRO (Runtime Resource Overlay)
+PRODUCT_ENFORCE_RRO_TARGETS += *
+
 # Rootdir
 PRODUCT_COPY_FILES := \
     $(COMMON_PATH)/rootdir/fstab.smdk4210:root/fstab.smdk4210 \
