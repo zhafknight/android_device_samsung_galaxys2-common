@@ -1,3 +1,4 @@
+#pragma clang diagnostic ignored "-Wimplicit-fallthrough"
 #include <android/api-level.h>
 #include "secril-shim.h"
 #include "secril-sap.h"
