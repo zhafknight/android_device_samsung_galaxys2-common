@@ -62,8 +62,7 @@ PRODUCT_COPY_FILES += \
 
 # Packages
 PRODUCT_PACKAGES := \
-    com.android.future.usb.accessory \
-    Snap
+    com.android.future.usb.accessory
 
 # USB
 PRODUCT_PACKAGES += \
@@ -128,7 +127,6 @@ PRODUCT_PACKAGES += \
     android.hardware.camera.provider@2.4-impl-legacy \
     camera.device@1.0-impl-legacy \
     camera.smdk4210 \
-    Snap \
     libstagefright-shim
 
 PRODUCT_COPY_FILES += \
@@ -222,14 +220,7 @@ PRODUCT_PACKAGES += \
 
 # Live Wallpapers
 PRODUCT_PACKAGES += \
-    Galaxy4 \
-    HoloSpiralWallpaper \
-    LiveWallpapers \
     LiveWallpapersPicker \
-    MagicSmokeWallpapers \
-    NoiseField \
-    PhaseBeam \
-    VisualizationWallpapers \
     librs_jni
 
 # Wifi
