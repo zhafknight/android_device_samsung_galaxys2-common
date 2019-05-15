@@ -55,11 +55,6 @@ PRODUCT_PROPERTY_OVERRIDES += \
 
 $(call inherit-product-if-exists, hardware/broadcom/wlan/bcmdhd/firmware/bcm4330/device-bcm.mk)
 
-# Gps
-PRODUCT_COPY_FILES += \
-    $(COMMON_PATH)/configs/gps_debug.conf:system/etc/gps_debug.conf \
-    $(COMMON_PATH)/configs/sirfgps.conf:system/etc/sirfgps.conf
-
 # Packages
 PRODUCT_PACKAGES := \
     com.android.future.usb.accessory
@@ -72,11 +67,6 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     libsamsung_symbols \
     libsecril-shim
-
-# Legacy GPS
-PRODUCT_PACKAGES += \
-    android.hardware.gnss@1.0-impl \
-    gps.smdk4210
 
 # SamsungPowerHAL
 PRODUCT_PACKAGES += \
