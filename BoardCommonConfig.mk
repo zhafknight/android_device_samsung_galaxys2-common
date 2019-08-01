@@ -162,9 +162,15 @@ BOARD_CHARGING_MODE_BOOTING_LPM := /sys/class/power_supply/battery/batt_lp_charg
 BOARD_BATTERY_DEVICE_NAME := "battery"
 BOARD_CHARGER_ENABLE_SUSPEND := true
 BOARD_CHARGER_SHOW_PERCENTAGE := true
-BOARD_CUSTOM_BOOTIMG := true
-BOARD_CUSTOM_BOOTIMG_MK := device/samsung/galaxys2-common/shbootimg.mk
 BOARD_USES_FULL_RECOVERY_IMAGE := true
+
+# Boot.img
+BOARD_CUSTOM_BOOTIMG := true
+ifeq ($(WITH_MAGISKRAMDISK),true)
+BOARD_CUSTOM_BOOTIMG_MK := device/samsung/galaxys2-common/shbootimg_magisk.mk
+else
+BOARD_CUSTOM_BOOTIMG_MK := device/samsung/galaxys2-common/shbootimg.mk
+endif
 
 # Override healthd HAL
 BOARD_HAL_STATIC_LIBRARIES := libhealthd.exynos4
