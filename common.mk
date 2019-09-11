@@ -57,7 +57,6 @@ $(call inherit-product-if-exists, hardware/broadcom/wlan/bcmdhd/firmware/bcm4330
 
 # Gps
 PRODUCT_COPY_FILES += \
-    $(COMMON_PATH)/configs/gps_debug.conf:system/etc/gps_debug.conf \
     $(COMMON_PATH)/configs/sirfgps.conf:system/etc/sirfgps.conf
 
 # Packages
@@ -130,10 +129,6 @@ PRODUCT_PACKAGES += \
     camera.smdk4210 \
     Snap \
     libstagefright-shim
-
-PRODUCT_COPY_FILES += \
-    $(LOCAL_PATH)/configs/mediaserver.rc:system/etc/init/mediaserver.rc
-
 
 PRODUCT_PROPERTY_OVERRIDES += \
     media.stagefright.legacyencoder=true \
@@ -267,10 +262,6 @@ PRODUCT_COPY_FILES += \
     frameworks/native/data/etc/android.software.sip.xml:system/etc/permissions/android.software.sip.xml \
     frameworks/native/data/etc/handheld_core_hardware.xml:system/etc/permissions/handheld_core_hardware.xml \
     frameworks/native/data/etc/android.hardware.bluetooth_le.xml:system/etc/permissions/android.hardware.bluetooth_le.xml
-
-# Feature live wallpaper
-PRODUCT_COPY_FILES += \
-    packages/wallpapers/LivePicker/android.software.live_wallpaper.xml:system/etc/permissions/android.software.live_wallpaper.xml
 
 PRODUCT_TAGS += dalvik.gc.type-precise
 
