@@ -145,11 +145,6 @@ PRODUCT_PROPERTY_OVERRIDES += \
 PRODUCT_COPY_FILES += \
     device/samsung/galaxys2-common/manifest.xml:system/vendor/manifest.xml
 
-# Charger
-PRODUCT_PACKAGES += \
-    charger_exynos4 \
-    charger_res_images
-
 # MFC API
 PRODUCT_PACKAGES += \
     libsecmfcapi
