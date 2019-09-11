@@ -28,7 +28,7 @@
 #include "gps.h"
 #define REAL_GPS_PATH "system/vendor/lib/hw/gps.exynos4.vendor.so"
 
-extern uint32_t android_get_application_target_sdk_version();
+extern int android_get_application_target_sdk_version();
 extern void android_set_application_target_sdk_version(uint32_t target);
 
 // Speed conversion km/h to gps speed-value

@@ -37,7 +37,7 @@
 #include "audio_hw.h"
 #include "mixer.h"
 
-extern uint32_t android_get_application_target_sdk_version();
+extern int android_get_application_target_sdk_version();
 extern void android_set_application_target_sdk_version(uint32_t target);
 
 /*
