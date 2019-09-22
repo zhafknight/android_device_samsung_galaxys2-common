@@ -1,4 +1,4 @@
-sbin/cbd
+sbin/cbd:system/bin/cbd
 system/bin/bcm4330B1.hcd
 system/bin/bcm4330B1_murata.hcd
 system/bin/bcm4330B1_semcosh.hcd
