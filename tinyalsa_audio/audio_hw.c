@@ -38,7 +38,7 @@
 #include "mixer.h"
 
 extern int android_get_application_target_sdk_version();
-extern void android_set_application_target_sdk_version(uint32_t target);
+extern void android_set_application_target_sdk_version(int target);
 
 /*
  * Functions
@@ -441,7 +441,7 @@ int audio_hw_open(const hw_module_t *module, const char *name,
 	if(tinyalsa_audio_device == NULL)
 		return -ENOMEM;
 
-	android_set_application_target_sdk_version(__ANDROID_API_L_MR1__);
+//	android_set_application_target_sdk_version(__ANDROID_API_L_MR1__);
 
 	dev = &(tinyalsa_audio_device->device);
 

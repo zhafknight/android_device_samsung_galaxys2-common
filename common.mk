@@ -74,9 +74,9 @@ PRODUCT_PACKAGES += \
     libsecril-shim
 
 # Legacy GPS
-PRODUCT_PACKAGES += \
-    android.hardware.gnss@1.0-impl \
-    gps.smdk4210
+# PRODUCT_PACKAGES += \
+#    android.hardware.gnss@1.0-impl \
+#    gps.smdk4210
 
 # SamsungPowerHAL
 PRODUCT_PACKAGES += \
@@ -115,20 +115,20 @@ PRODUCT_PACKAGES += \
     libhwconverter \
     libs5pjpeg \
     libfimg \
-    libsecion \
-    libC
+    libsecion
+#    libC
 
 #Vibrator
 PRODUCT_PACKAGES += \
     android.hardware.vibrator@1.0-impl
 
 #Camera
-PRODUCT_PACKAGES += \
-    android.hardware.camera.provider@2.4-impl-legacy \
-    camera.device@1.0-impl-legacy \
-    camera.smdk4210 \
-    Snap \
-    libstagefright-shim
+#PRODUCT_PACKAGES += \
+#    android.hardware.camera.provider@2.4-impl-legacy \
+#    camera.device@1.0-impl-legacy \
+#    camera.smdk4210 \
+#    Snap \
+#    libstagefright-shim
 
 PRODUCT_PROPERTY_OVERRIDES += \
     media.stagefright.legacyencoder=true \
@@ -201,8 +201,8 @@ PRODUCT_PROPERTY_OVERRIDES += \
 PRODUCT_PROPERTY_OVERRIDES += \
     config.disable_atlas=true
 
-PRODUCT_PACKAGES += \
-    SamsungDoze
+# PRODUCT_PACKAGES += \
+#    SamsungDoze
 
 # Filesystem management tools
 PRODUCT_PACKAGES += \

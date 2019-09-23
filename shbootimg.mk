@@ -53,5 +53,5 @@ recoveryimage-galaxys2-common: $(recovery_uncompressed_ramdisk_device)
 $(INSTALLED_BOOTIMAGE_TARGET): $(INSTALLED_KERNEL_TARGET)
 	$(ACP) -fp $< $@
 
-$(INSTALLED_RECOVERYIMAGE_TARGET): $(recovery_uncompressed_ramdisk) $(recovery_kernel)
+$(INSTALLED_RECOVERYIMAGE_TARGET): $(MKBOOTIMG) $(recovery_uncompressed_ramdisk) $(recovery_kernel)
 	lzop -f9 -o $@ $<
