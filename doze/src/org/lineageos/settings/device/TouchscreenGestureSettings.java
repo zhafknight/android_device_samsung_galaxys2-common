@@ -20,9 +20,9 @@ import org.lineageos.settings.util.ScreenType;
 
 import android.app.ActionBar;
 import android.os.Bundle;
-import android.support.v14.preference.PreferenceFragment;
-import android.support.v14.preference.SwitchPreference;
-import android.support.v7.preference.Preference;
+import androidx.preference.PreferenceFragment;
+import androidx.preference.SwitchPreference;
+import androidx.preference.Preference;
 import android.provider.Settings;
 
 public class TouchscreenGestureSettings extends PreferenceFragment {
