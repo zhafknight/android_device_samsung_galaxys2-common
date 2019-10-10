@@ -39,6 +39,10 @@ PRODUCT_COPY_FILES := \
     $(COMMON_PATH)/rootdir/init.smdk4210.rc:root/init.smdk4210.rc \
     $(COMMON_PATH)/rootdir/ueventd.smdk4210.rc:root/ueventd.smdk4210.rc
 
+# Component overrides
+PRODUCT_COPY_FILES += \
+    $(COMMON_PATH)/configs/component-overrides.xml:$(TARGET_COPY_OUT_VENDOR)/etc/sysconfig/component-overrides.xml
+
 # TWRP
 ifeq ($(RECOVERY_VARIANT),twrp)
 $(call inherit-product, device/samsung/galaxys2-common/twrp/twrp.mk)
