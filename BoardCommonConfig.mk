@@ -163,6 +163,9 @@ RECOVERY_FSTAB_VERSION := 2
 # Device specific headers
 TARGET_SPECIFIC_HEADER_PATH := device/samsung/galaxys2-common/include
 
+# System as root
+BOARD_BUILD_SYSTEM_ROOT_IMAGE := true
+
 # Charging mode
 BOARD_BATTERY_DEVICE_NAME := "battery"
 BOARD_CHARGER_ENABLE_SUSPEND := true
