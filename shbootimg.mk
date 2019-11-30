@@ -19,5 +19,7 @@ LOCAL_PATH := $(call my-dir)
 $(INSTALLED_BOOTIMAGE_TARGET): $(INSTALLED_KERNEL_TARGET)
 	$(ACP) -fp $< $@
 
-$(INSTALLED_RECOVERYIMAGE_TARGET): $(recovery_uncompressed_ramdisk)
-	lzop -f9 -o $@ $<
+$(INSTALLED_RECOVERYIMAGE_TARGET): $(MKBOOTIMG) $(recovery_ramdisk) $(recovery_kernel) \
+	$(RECOVERYIMAGE_EXTRA_DEPS)
+	@echo ----- Making recovery image ------
+	$(call build-recoveryimage-target, $@)

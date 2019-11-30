@@ -171,6 +171,7 @@ BOARD_USES_FULL_RECOVERY_IMAGE := true
 WITH_LINEAGE_CHARGER := false
 
 # Boot.img
+BOARD_BUILD_SYSTEM_ROOT_IMAGE := true
 BOARD_CUSTOM_BOOTIMG := true
 ifeq ($(WITH_MAGISKRAMDISK),true)
 BOARD_CUSTOM_BOOTIMG_MK := device/samsung/galaxys2-common/shbootimg_magisk.mk
