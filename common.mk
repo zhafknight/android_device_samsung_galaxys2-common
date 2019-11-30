@@ -129,11 +129,8 @@ PRODUCT_PACKAGES += \
     camera.device@1.0-impl-legacy \
     camera.smdk4210 \
     Snap \
-    libstagefright-shim
-
-PRODUCT_COPY_FILES += \
-    $(LOCAL_PATH)/configs/mediaserver.rc:system/etc/init/mediaserver.rc
-
+    libstagefright-shim \
+    mediaserver.rc
 
 PRODUCT_PROPERTY_OVERRIDES += \
     media.stagefright.legacyencoder=true \
