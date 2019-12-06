@@ -88,6 +88,10 @@ PRODUCT_PROPERTY_OVERRIDES += \
     ro.config.small_battery=true
 
 
+# Use legacy ADB USB support
+PRODUCT_PROPERTY_OVERRIDES += \
+    ro.adb.nonblocking_ffs=false
+
 # Audio Packages
 PRODUCT_PACKAGES += \
     android.hardware.audio@2.0-impl \
