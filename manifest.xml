@@ -86,5 +86,14 @@
             <name>IUsb</name>
             <instance>default</instance>
         </interface>
-     </hal>
+    </hal>
+    <hal format="hidl">
+        <name>android.hardware.light</name>
+        <transport>hwbinder</transport>
+        <version>2.0</version>
+        <interface>
+            <name>ILight</name>
+            <instance>default</instance>
+        </interface>
+    </hal>
 </manifest>
