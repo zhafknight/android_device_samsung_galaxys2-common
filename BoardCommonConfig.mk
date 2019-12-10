@@ -58,6 +58,16 @@ TARGET_NEEDS_PLATFORM_TEXT_RELOCATIONS := true
 TARGET_LD_SHIM_LIBS := \
     /system/vendor/lib/libsec-ril.so|libsamsung_symbols.so
 
+TARGET_PROCESS_SDK_VERSION_OVERRIDE := \
+    /vendor/bin/hw/rild=22 \
+    /system/vendor/lib/libsec-ril.so=22 \
+    /system/lib/libsecnativefeature.so=22 \
+    /system/lib/libomission_avoidance.so=22 \
+    /system/lib/libfactoryutil.so=22 \
+    /system/vendor/lib/libakm.so=22 \
+    /system/vendor/lib/libsecril-client.so=22 \
+    /system/vendor/lib/hw/gps.exynos4.vendor.so=22
+
 # Include an expanded selection of fonts
 EXTENDED_FONT_FOOTPRINT := true
 
