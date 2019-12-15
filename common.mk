@@ -82,9 +82,9 @@ PRODUCT_PACKAGES += \
     libsecril-shim
 
 # Legacy GPS
-PRODUCT_PACKAGES += \
-    android.hardware.gnss@1.0-impl \
-    gps.smdk4210
+#PRODUCT_PACKAGES += \
+#    android.hardware.gnss@1.0-impl \
+#    gps.smdk4210
 
 # SamsungPowerHAL
 PRODUCT_PACKAGES += \
