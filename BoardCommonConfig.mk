@@ -17,6 +17,9 @@
 
 DEVICE_PATH := device/samsung/galaxys2-common
 
+# Allow duplicate rules to override them
+BUILD_BROKEN_DUP_RULES := true
+
 # This variable is set first, so it can be overridden
 # by BoardConfigVendor.mk
 BOARD_USES_GENERIC_AUDIO := false
