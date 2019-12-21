@@ -30,3 +30,4 @@
 /dev/block/mmcblk0p8      0660   system     radio
 /dev/akm8975              0660   system     system
 /dev/accelerometer        0660   system     system
+/dev/uinput               0660   system     system
