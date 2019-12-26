@@ -161,7 +161,7 @@ BOARD_CUSTOM_BT_CONFIG := device/samsung/galaxys2-common/bluetooth/vnd_smdk4210.
 
 # Selinux
 SELINUX_IGNORE_NEVERALLOWS := true
-BOARD_SEPOLICY_DIRS += device/samsung/galaxys2-common/selinux/vendor
+BOARD_VENDOR_SEPOLICY_DIRS += device/samsung/galaxys2-common/selinux/vendor
 BOARD_PLAT_PUBLIC_SEPOLICY_DIR += device/samsung/galaxys2-common/selinux/public
 BOARD_PLAT_PRIVATE_SEPOLICY_DIR += device/samsung/galaxys2-common/selinux/private
 
