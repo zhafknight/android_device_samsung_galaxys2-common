@@ -13,3 +13,4 @@ allow rild shell_exec:file { getattr execute_no_trans execute open read };
 # Only allowed because of TARGET_NEEDS_PLATFORM_TEXT_RELOCATIONS
 allow rild system_file:file execmod;
 allow rild vendor_file:file execmod;
+allow rild system_lib_file:file execmod;
