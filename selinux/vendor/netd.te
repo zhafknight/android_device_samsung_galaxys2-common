@@ -3,3 +3,4 @@ allow netd sysfs_cpuinfo:dir search;
 allow netd sysfs_cpuinfo:file { getattr open read };
 allow netd sysfs_rmnet:dir search;
 allow netd sysfs_rmnet:file { open write };
+allow netd device:file { open write };
