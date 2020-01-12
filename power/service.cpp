@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-#define LOG_TAG "android.hardware.power@1.0-service.exynos"
+#define LOG_TAG "android.hardware.power@1.0-service.smdk4210"
 
 #include <android/log.h>
 #include <hidl/HidlTransportSupport.h>
@@ -36,7 +36,7 @@ int main() {
     status_t status;
     android::sp<Power> service = nullptr;
 
-    ALOGI("Power HAL Service 1.0 for Exynos4 is starting.");
+    ALOGI("Power HAL Service 1.0 for SMDK4210 is starting.");
 
     service = new Power();
     if (service == nullptr) {

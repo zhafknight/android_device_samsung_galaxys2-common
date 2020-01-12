@@ -57,7 +57,7 @@
 /system/bin/macloader                                            u:object_r:macloader_exec:s0
 
 # Vendor
-/(vendor|system/vendor)/bin/hw/android\.hardware\.power@1\.0-service\.exynos4     u:object_r:hal_power_default_exec:s0
+/(vendor|system/vendor)/bin/hw/android\.hardware\.power@1\.0-service\.smdk4210     u:object_r:hal_power_default_exec:s0
 
 # healthd
 /sys/devices/platform/s3c2440-i2c.5/i2c-5/5-0066/max8997-charger(/.*)?	u:object_r:sysfs_batteryinfo:s0
