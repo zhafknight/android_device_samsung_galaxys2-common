@@ -9,3 +9,4 @@ allow system_app perfprofd:binder call;
 allow system_app wificond:binder call;
 allow system_app sysfs_cpuinfo:dir search;
 allow system_app sysfs_cpuinfo:file { getattr open read };
+allow system_app ion_device:chr_file write;
