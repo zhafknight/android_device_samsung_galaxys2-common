@@ -17,4 +17,9 @@
     <!-- Button backlight -->
     <integer name="config_buttonBrightnessSettingDefault">255</integer>
     <bool name="config_deviceHasVariableButtonBrightness">true</bool>
+
+    <string-array name="config_deviceDisabledComponents" translatable="false">
+        <item>com.google.android.mdh/com.google.android.mdh.service</item>
+        <item>com.google.android.gms/com.google.android.gms.herrevad.services.LightweightNetworkQualityAndroidService</item>
+    </string-array>
 </resources>
