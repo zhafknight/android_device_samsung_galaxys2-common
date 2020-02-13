@@ -82,7 +82,7 @@ PRODUCT_PACKAGES += \
 # Legacy GPS
 PRODUCT_PACKAGES += \
     android.hardware.gnss@1.0-impl \
-    android.hardware.gnss@1.0-service \
+    android.hardware.gnss@1.0-service.exynos4 \
     gps.smdk4210
 
 # SamsungPowerHAL
