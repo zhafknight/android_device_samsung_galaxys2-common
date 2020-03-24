@@ -189,11 +189,7 @@ WITH_LINEAGE_CHARGER := false
 
 # Boot.img
 BOARD_CUSTOM_BOOTIMG := true
-ifeq ($(WITH_MAGISKRAMDISK),true)
-BOARD_CUSTOM_BOOTIMG_MK := device/samsung/galaxys2-common/shbootimg_magisk.mk
-else
 BOARD_CUSTOM_BOOTIMG_MK := device/samsung/galaxys2-common/shbootimg.mk
-endif
 
 # Use the non-open-source parts, if they're present
 -include vendor/samsung/galaxys2-common/BoardConfigVendor.mk

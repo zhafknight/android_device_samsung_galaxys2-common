@@ -53,14 +53,19 @@ case $USERINPUT in
 
 	echo "Rebuilding kernel with Magisk modified ramdisk..."
 	croot
-        cp buildspec.mk buildspec.mk.org
+
+	BUILDSPECFILE=buildspec.mk
+	if test -f "$BUILDSPECFILE"; then
+	        cp buildspec.mk buildspec.mk.org
+	fi
+
 	echo "WITH_MAGISKRAMDISK:=true" >>buildspec.mk
 	mka bootimage
 	echo "Rebuilding kernel with Magisk modified ramdisk... Done!"
 
 	cout
 	echo "Flashing Magisk-kernel to /dev/block/mmcblk0p5..."
-	adb push boot.img /dev/block/mmcblk0p5
+	adb push kernel /dev/block/mmcblk0p5
 	echo "Flashing Magisk-kernel to /dev/block/mmcblk0p5... Done!"
 
 	echo "Pushing flashable /sdcard1/boot_magisk.img..."
@@ -69,7 +74,12 @@ case $USERINPUT in
 	echo ""
 	croot
 	rm buildspec.mk
-	mv buildspec.mk.org buildspec.mk
+
+	BUILDSPECFILE=buildspec.mk.org
+	if test -f "$BUILDSPECFILE"; then
+		mv buildspec.mk.org buildspec.mk
+	fi
+
 	echo "*** You can now reboot your Magisk-enabled device. ***"
  ;;
  *)
