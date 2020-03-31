@@ -22,8 +22,8 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := audio-ril-interface.c
 
 LOCAL_C_INCLUDES := \
-	hardware/ril/samsung-ril/include \
-	hardware/ril/samsung-ril/srs-client/include \
+	hardware/replicant/libsamsung-ril/include \
+	hardware/replicant/libsamsung-ril/srs-client/include \
 	hardware/tinyalsa-audio/include/
 
 LOCAL_SHARED_LIBRARIES := liblog libcutils libsrs-client
