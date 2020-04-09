@@ -4,9 +4,6 @@ on init
     mkdir /mnt 0775 root system
     mkdir /mnt/.lfs 0755 root root
 
-    # for backwards compatibility
-    symlink /sdcard /storage/sdcard
-
 # Permissions for PowerHAL
     chown system system /sys/devices/system/cpu/cpu0/cpufreq/scaling_governor
 
