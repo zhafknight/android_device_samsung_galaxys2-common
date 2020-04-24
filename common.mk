@@ -299,6 +299,7 @@ PRODUCT_PACKAGES += \
     hostapd \
     libwpa_client \
     macloader \
+    WifiOverlay \
     wpa_supplicant \
     wpa_supplicant.conf
 
