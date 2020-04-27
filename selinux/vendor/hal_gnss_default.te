@@ -1,0 +1,7 @@
+allow hal_gnss_default device:chr_file { ioctl open read write };
+allow hal_gnss_default rild:unix_stream_socket connectto;
+allow hal_gnss_default sysfs:file { open read write };
+allow hal_gnss_default system_data_file:file { getattr open read write };
+allow hal_gnss_default vendor_file:file execmod;
+allow hal_gnss_default vndbinder_device:chr_file { ioctl open read write };
+# allow hal_gnss_default system_suspend:binder call;

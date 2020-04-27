@@ -94,3 +94,6 @@
 
 # LiveDisplay HAL
 /(vendor|system/vendor)/bin/hw/vendor\.lineage\.livedisplay@[0-9]\.[0-9]-service\.samsung-exynos    u:object_r:hal_lineage_livedisplay_exynos_exec:s0
+
+# GPS
+/(vendor|system/vendor)/bin/hw/android\.hardware\.gnss@[0-9]\.[0-9]-service\.exynos4    u:object_r:hal_gnss_default_exec:s0
