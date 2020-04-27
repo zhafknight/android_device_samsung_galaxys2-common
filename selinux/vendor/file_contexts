@@ -97,3 +97,6 @@
 
 # GPS
 /(vendor|system/vendor)/bin/hw/android\.hardware\.gnss@[0-9]\.[0-9]-service\.exynos4    u:object_r:hal_gnss_default_exec:s0
+
+# Light
+/(vendor|system/vendor)/bin/hw/android\.hardware\.light@[0-9]\.[0-9]-service\.samsung    u:object_r:hal_light_default_exec:s0
