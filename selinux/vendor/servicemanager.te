@@ -1,2 +1,0 @@
-allow servicemanager sysfs_cpuinfo:dir search;
-allow servicemanager sysfs_cpuinfo:file { getattr open read };

@@ -1,2 +1,0 @@
-allow zygote sysfs_cpuinfo:dir { open read search };
-allow zygote sysfs_cpuinfo:file { getattr open read };
