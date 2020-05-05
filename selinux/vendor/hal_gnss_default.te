@@ -1,3 +1,5 @@
+allow hal_gnss_default fwmarkd_socket:sock_file write;
+allow hal_gnss_default netd:unix_stream_socket connectto;
 allow hal_gnss_default device:chr_file { ioctl open read write };
 allow hal_gnss_default rild:unix_stream_socket connectto;
 allow hal_gnss_default sysfs:file { open read write };
