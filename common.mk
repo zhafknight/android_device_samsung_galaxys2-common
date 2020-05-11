@@ -310,5 +310,11 @@ $(call inherit-product, $(LOCAL_PATH)/go_galaxys2-common.mk)
 # Apply Dalvik config for 1G phone
 $(call inherit-product, frameworks/native/build/phone-xhdpi-1024-dalvik-heap.mk)
 
-# Call jf system debug props
-$(call inherit-product, $(LOCAL_PATH)/system_prop_debug.mk)
+# Enable ADB debugging at boot
+ifeq ($(WITH_ADB_DEBUG_AT_BOOT),true)
+PRODUCT_SYSTEM_DEFAULT_PROPERTIES += \
+    ro.adb.secure=0 \
+    ro.debuggable=1 \
+    persist.service.adb.enable=1 \
+    persist.sys.usb.config=adb
+endif
