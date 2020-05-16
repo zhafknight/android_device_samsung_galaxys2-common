@@ -12,13 +12,13 @@ system/vendor/etc/wifi/nvram_mfg.txt
 system/vendor/etc/wifi/nvram_mfg.txt_murata
 system/vendor/etc/wifi/nvram_net.txt
 system/vendor/etc/wifi/nvram_net.txt_murata
-system/lib/egl/libEGL_mali.so
-system/lib/egl/libGLESv1_CM_mali.so
-system/lib/egl/libGLESv2_mali.so
-system/lib/libMali.so
-system/lib/libfactoryutil.so
-system/lib/libomission_avoidance.so
-system/lib/libsecnativefeature.so
+system/vendor/lib/egl/libEGL_mali.so
+system/vendor/lib/egl/libGLESv1_CM_mali.so
+system/vendor/lib/egl/libGLESv2_mali.so
+system/vendor/lib/libMali.so
+system/vendor/lib/libfactoryutil.so
+system/vendor/lib/libomission_avoidance.so
+system/vendor/lib/libsecnativefeature.so
 system/vendor/firmware/libpn544_fw.so
 system/vendor/firmware/mfc_fw.bin
 system/vendor/lib/drm/libdrmwvmplugin.so
@@ -26,3 +26,4 @@ system/vendor/lib/mediadrm/libwvdrmengine.so
 system/vendor/lib/libWVStreamControlAPI_L3.so
 system/vendor/lib/libwvdrm_L3.so
 system/vendor/lib/libwvm.so
+system/vendor/lib/libC.so
