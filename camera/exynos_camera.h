@@ -242,6 +242,10 @@ struct exynos_camera {
 
 	int camera_sensor_mode;
 
+	int preview_requested_width;
+	int preview_requested_height;
+	int touch_focus_blocked;
+
 	// Params
 	int preview_width;
 	int preview_height;
@@ -296,7 +300,7 @@ struct exynos_v4l2_ext_control {
  */
 
 int exynos_camera_params_init(struct exynos_camera *exynos_camera, int id);
-int exynos_camera_params_apply(struct exynos_camera *exynos_camera);
+int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit);
 
 int exynos_camera_auto_focus_start(struct exynos_camera *exynos_camera);
 void exynos_camera_auto_focus_stop(struct exynos_camera *exynos_camera);
