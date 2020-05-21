@@ -616,6 +616,37 @@ int exynos_camera_params_handle_effect(struct exynos_camera *exynos_camera, int 
 	return rc;
 }
 
+int exynos_camera_params_handle_zoom(struct exynos_camera *exynos_camera, int force)
+{
+	int rc = 0;
+	char *zoom_supported_string;
+	int zoom, max_zoom;
+
+	zoom_supported_string = exynos_param_string_get(exynos_camera, "zoom-supported");
+	if (zoom_supported_string == NULL || strcmp(zoom_supported_string, "true") != 0) {
+		return 0;
+	}
+
+	zoom = exynos_param_int_get(exynos_camera, "zoom");
+	max_zoom = exynos_param_int_get(exynos_camera, "max-zoom");
+	if (zoom > max_zoom && zoom < 0) {
+		ALOGE("zoom: %d out of range! (max-zoom: %d)", zoom, max_zoom);
+		return -1;
+	}
+
+	if (zoom != exynos_camera->zoom || force) {
+		ALOGD("zoom: %d", zoom);
+		ALOGD("zoom: V4L2_CID_CAMERA_ZOOM: %d", zoom);
+		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_ZOOM, zoom);
+		if (rc < 0) {
+			ALOGE("V4L2_CID_CAMERA_ZOOM failed!");
+			return rc;
+		}
+		exynos_camera->zoom = zoom;
+	}
+	return rc;
+}
+
 int exynos_camera_params_handle_flashmode(struct exynos_camera *exynos_camera, int force)
 {
 	int rc = 0;
@@ -1043,9 +1074,6 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	int focus_x;
 	int focus_y;
 
-	char *zoom_supported_string;
-	int zoom, max_zoom;
-
 	int exposure_compensation;
 	int min_exposure_compensation;
 	int max_exposure_compensation;
@@ -1251,19 +1279,7 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	exynos_camera_params_handle_scene_mode(exynos_camera, false);
 
 	// Zoom
-	zoom_supported_string = exynos_param_string_get(exynos_camera, "zoom-supported");
-	if (zoom_supported_string != NULL && strcmp(zoom_supported_string, "true") == 0) {
-		zoom = exynos_param_int_get(exynos_camera, "zoom");
-		max_zoom = exynos_param_int_get(exynos_camera, "max-zoom");
-		if (zoom <= max_zoom && zoom >= 0 && (zoom != exynos_camera->zoom || force)) {
-			exynos_camera->zoom = zoom;
-			ALOGD("%s: zoom => %d", __func__, exynos_camera->zoom);
-			rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_ZOOM, zoom);
-			if (rc < 0)
-				ALOGE("%s: s ctrl failed!", __func__);
-		}
-
-	}
+	exynos_camera_params_handle_zoom(exynos_camera, false);
 
 	// Flash
 	exynos_camera_params_handle_flashmode(exynos_camera, force);
