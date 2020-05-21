@@ -616,6 +616,32 @@ int exynos_camera_params_handle_effect(struct exynos_camera *exynos_camera, int 
 	return rc;
 }
 
+int exynos_camera_params_handle_exposure_compensation(struct exynos_camera *exynos_camera, int force)
+{
+	int rc = 0;
+	int exposure_compensation = exynos_param_int_get(exynos_camera, "exposure-compensation");
+	int min_exposure_compensation = exynos_param_int_get(exynos_camera, "min-exposure-compensation");
+	int max_exposure_compensation = exynos_param_int_get(exynos_camera, "max-exposure-compensation");
+
+	if (exposure_compensation > max_exposure_compensation || exposure_compensation < min_exposure_compensation)
+	{
+		ALOGE("exposure-compensation: %d out of range! (%d-%d)",
+			exposure_compensation, min_exposure_compensation, max_exposure_compensation);
+		return -1;
+	}
+	if (exposure_compensation != exynos_camera->exposure_compensation || force) {
+		ALOGD("exposure-compensation: %d" , __func__, exposure_compensation);
+		ALOGD("exposure-compensation: V4L2_CID_CAMERA_BRIGHTNESS: %d" , __func__, exposure_compensation);
+		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_BRIGHTNESS, exposure_compensation);
+		if (rc < 0) {
+			ALOGE("V4L2_CID_CAMERA_BRIGHTNESS failed!");
+			return rc;
+		}
+		exynos_camera->exposure_compensation = exposure_compensation;
+	}
+	return rc;
+}
+
 int exynos_camera_params_handle_whitebalance(struct exynos_camera *exynos_camera, int force)
 {
 	int rc = 0;
@@ -1233,18 +1259,7 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	}
 
 	// Exposure
-	exposure_compensation = exynos_param_int_get(exynos_camera, "exposure-compensation");
-	min_exposure_compensation = exynos_param_int_get(exynos_camera, "min-exposure-compensation");
-	max_exposure_compensation = exynos_param_int_get(exynos_camera, "max-exposure-compensation");
-
-	if (exposure_compensation <= max_exposure_compensation && exposure_compensation >= min_exposure_compensation &&
-		(exposure_compensation != exynos_camera->exposure_compensation || force)) {
-		exynos_camera->exposure_compensation = exposure_compensation;
-		ALOGD("%s: exposure-compensation => %d" , __func__, exynos_camera->exposure_compensation);
-		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_BRIGHTNESS, exposure_compensation);
-		if (rc < 0)
-			ALOGE("%s: s ctrl failed!", __func__);
-	}
+	exynos_camera_params_handle_exposure_compensation(exynos_camera, force);
 
 	// WB
 	exynos_camera_params_handle_whitebalance(exynos_camera, force);
