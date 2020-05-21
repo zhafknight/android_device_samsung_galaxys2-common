@@ -798,6 +798,45 @@ int exynos_camera_params_handle_scene_mode(struct exynos_camera *exynos_camera, 
 	return rc;
 }
 
+int exynos_camera_params_handle_jpeg(struct exynos_camera *exynos_camera, bool force) {
+	int rc = 0;
+	int jpeg_thumbnail_width = 0;
+	int jpeg_thumbnail_height = 0;
+	int jpeg_thumbnail_quality = 0;
+	int jpeg_quality = 0;
+
+	jpeg_thumbnail_width = exynos_param_int_get(exynos_camera, "jpeg-thumbnail-width");
+	jpeg_thumbnail_height = exynos_param_int_get(exynos_camera, "jpeg-thumbnail-height");
+
+	if (jpeg_thumbnail_width > 0 && jpeg_thumbnail_height > 0) {
+		if (exynos_camera->jpeg_thumbnail_width != jpeg_thumbnail_width ||
+		    exynos_camera->jpeg_thumbnail_height != jpeg_thumbnail_height || force) {
+			ALOGD("jpeg-thumbnail: %dx%d",exynos_camera->jpeg_thumbnail_width, exynos_camera->jpeg_thumbnail_height);
+			exynos_camera->jpeg_thumbnail_width = jpeg_thumbnail_width;
+			exynos_camera->jpeg_thumbnail_height = jpeg_thumbnail_height;
+		}
+	}
+
+	jpeg_thumbnail_quality = exynos_param_int_get(exynos_camera, "jpeg-thumbnail-quality");
+	if ((exynos_camera->jpeg_thumbnail_quality != jpeg_thumbnail_quality || force) && (jpeg_thumbnail_quality > 0)) {
+		ALOGD("jpeg-thumbnail-quality: %d", jpeg_thumbnail_quality);
+		exynos_camera->jpeg_thumbnail_quality = jpeg_thumbnail_quality;
+	}
+
+	jpeg_quality = exynos_param_int_get(exynos_camera, "jpeg-quality");
+	if (jpeg_quality <= 100 && jpeg_quality >= 0 && (jpeg_quality != exynos_camera->jpeg_quality || force)) {
+		ALOGD("jpeg-quality: %d", jpeg_quality);
+
+		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAM_JPEG_QUALITY, jpeg_quality);
+		if (rc < 0) {
+			ALOGE("jpeg-quality: V4L2_CID_CAM_JPEG_QUALITY failed!");
+			return rc;
+		}
+		exynos_camera->jpeg_quality = jpeg_quality;
+	}
+	return rc;
+}
+
 int exynos_camera_params_handle_video_size(struct exynos_camera *exynos_camera, bool force) {
 	int rc = 0;
 	char *video_size_string;
@@ -1108,11 +1147,6 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	char *picture_format_string;
 	int picture_format;
 
-	int jpeg_thumbnail_width;
-	int jpeg_thumbnail_height;
-	int jpeg_thumbnail_quality;
-	int jpeg_quality;
-
 	char *focus_mode_string;
 
 	int force = 0;
@@ -1207,36 +1241,8 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	}
 
 
-	jpeg_thumbnail_width = exynos_param_int_get(exynos_camera, "jpeg-thumbnail-width");
-	if (jpeg_thumbnail_width > 0 && jpeg_thumbnail_width != exynos_camera->jpeg_thumbnail_width) {
-		exynos_camera->jpeg_thumbnail_width = jpeg_thumbnail_width;
-		isChanged = true;
-	}
-
-	jpeg_thumbnail_height = exynos_param_int_get(exynos_camera, "jpeg-thumbnail-height");
-	if (jpeg_thumbnail_height > 0 && jpeg_thumbnail_height != exynos_camera->jpeg_thumbnail_height) {
-		exynos_camera->jpeg_thumbnail_height = jpeg_thumbnail_height;
-		isChanged = true;
-	}
-	if (isChanged) {
-		ALOGD("%s: jpeg-thumbnail => %d x %d", __func__, exynos_camera->jpeg_thumbnail_width, exynos_camera->jpeg_thumbnail_height);
-		isChanged = false;
-	}
-
-	jpeg_thumbnail_quality = exynos_param_int_get(exynos_camera, "jpeg-thumbnail-quality");
-	if ((exynos_camera->jpeg_thumbnail_quality != jpeg_thumbnail_quality) && (jpeg_thumbnail_quality > 0)) {
-		exynos_camera->jpeg_thumbnail_quality = jpeg_thumbnail_quality;
-		ALOGD("%s: jpeg-thumbnail-quality => %d", __func__, jpeg_thumbnail_quality);
-	}
-	jpeg_quality = exynos_param_int_get(exynos_camera, "jpeg-quality");
-	if (jpeg_quality <= 100 && jpeg_quality >= 0 && (jpeg_quality != exynos_camera->jpeg_quality || force)) {
-		exynos_camera->jpeg_quality = jpeg_quality;
-		ALOGD("%s: jpeg-quality => %d", __func__, jpeg_quality);
-
-		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAM_JPEG_QUALITY, jpeg_quality);
-		if (rc < 0)
-			ALOGE("%s: s ctrl failed!", __func__);
-	}
+	// JPEG
+	exynos_camera_params_handle_jpeg(exynos_camera, false);
 
 	// Recording video-size
 	exynos_camera_params_handle_video_size(exynos_camera, false);
