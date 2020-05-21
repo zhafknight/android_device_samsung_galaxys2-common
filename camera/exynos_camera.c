@@ -616,6 +616,40 @@ int exynos_camera_params_handle_effect(struct exynos_camera *exynos_camera, int 
 	return rc;
 }
 
+int exynos_camera_params_handle_flashmode(struct exynos_camera *exynos_camera, int force)
+{
+	int rc = 0;
+	char *flash_mode_string;
+	int flash_mode = FLASH_MODE_AUTO;
+
+	flash_mode_string = exynos_param_string_get(exynos_camera, "flash-mode");
+	if (flash_mode_string != NULL) {
+		if (strcmp(flash_mode_string, "off") == 0)
+			flash_mode = FLASH_MODE_OFF;
+		else if (strcmp(flash_mode_string, "auto") == 0)
+			flash_mode = FLASH_MODE_AUTO;
+		else if (strcmp(flash_mode_string, "on") == 0)
+			flash_mode = FLASH_MODE_ON;
+		else if (strcmp(flash_mode_string, "torch") == 0)
+			flash_mode = FLASH_MODE_TORCH;
+		else
+			flash_mode = FLASH_MODE_AUTO;
+	}
+
+	if (flash_mode != exynos_camera->flash_mode || force) {
+		ALOGD("flash-mode: %s", flash_mode_string);
+		ALOGD("flash-mode: V4L2_CID_CAMERA_FLASH_MODE: %d", flash_mode);
+		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_FLASH_MODE, flash_mode);
+		if (rc < 0) {
+			ALOGE("flash-mode: V4L2_CID_CAMERA_FLASH_MODE failed!");
+			return rc;
+		}
+		exynos_camera->flash_mode = flash_mode;
+
+	}
+	return rc;
+}
+
 int exynos_camera_params_handle_exposure_compensation(struct exynos_camera *exynos_camera, int force)
 {
 	int rc = 0;
@@ -1012,9 +1046,6 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	char *zoom_supported_string;
 	int zoom, max_zoom;
 
-	char *flash_mode_string;
-	int flash_mode;
-
 	int exposure_compensation;
 	int min_exposure_compensation;
 	int max_exposure_compensation;
@@ -1235,28 +1266,7 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	}
 
 	// Flash
-	flash_mode_string = exynos_param_string_get(exynos_camera, "flash-mode");
-	if (flash_mode_string != NULL) {
-		if (strcmp(flash_mode_string, "off") == 0)
-			flash_mode = FLASH_MODE_OFF;
-		else if (strcmp(flash_mode_string, "auto") == 0)
-			flash_mode = FLASH_MODE_AUTO;
-		else if (strcmp(flash_mode_string, "on") == 0)
-			flash_mode = FLASH_MODE_ON;
-		else if (strcmp(flash_mode_string, "torch") == 0)
-			flash_mode = FLASH_MODE_TORCH;
-		else
-			flash_mode = FLASH_MODE_AUTO;
-
-		if (flash_mode != exynos_camera->flash_mode || force) {
-			exynos_camera->flash_mode = flash_mode;
-			ALOGD("%s: flash-mode => %d %s", __func__, exynos_camera->flash_mode, flash_mode_string);
-
-			rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_FLASH_MODE, flash_mode);
-			if (rc < 0)
-				ALOGE("%s: s ctrl failed!", __func__);
-		}
-	}
+	exynos_camera_params_handle_flashmode(exynos_camera, force);
 
 	// Exposure
 	exynos_camera_params_handle_exposure_compensation(exynos_camera, force);
