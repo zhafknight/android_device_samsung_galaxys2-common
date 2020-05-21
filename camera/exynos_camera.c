@@ -546,10 +546,10 @@ void exynos_camera_handle_preview_size(struct exynos_camera *exynos_camera) {
 
 }
 
-int exynos_camera_params_set_scene_mode(struct exynos_camera *exynos_camera, int force)
+int exynos_camera_params_handle_scene_mode(struct exynos_camera *exynos_camera, int force)
 {
 	char *scene_mode_string;
-	int scene_mode;
+	int scene_mode = SCENE_MODE_NONE;
 	char *focus_mode_string;
 	int rc = 0;
 
@@ -588,28 +588,17 @@ int exynos_camera_params_set_scene_mode(struct exynos_camera *exynos_camera, int
 			scene_mode = SCENE_MODE_TEXT;
 		else
 			scene_mode = SCENE_MODE_NONE;
+	}
 
-		if (scene_mode != exynos_camera->scene_mode || force) {
-			exynos_camera->scene_mode = scene_mode;
-
-			// Set focus-mode temporary to 'continuous' if not set
-			// This sets actually the camera in full automatic-mode
-			// (like exposure, focus and probably other things)
-			focus_mode_string = exynos_param_string_get(exynos_camera, "focus-mode");
-			if (strcmp(focus_mode_string, "continuous-video") != 0 &&
-				!exynos_camera->recording_enabled)
-				exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_FOCUS_MODE, FOCUS_MODE_CONTINOUS);
-
-			ALOGD("%s: scene-mode => %d %s", __func__, exynos_camera->scene_mode, scene_mode_string);
-			rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SCENE_MODE, scene_mode);
-			if (rc < 0)
-				ALOGE("%s: s ctrl failed!", __func__);
-
-			// Restore focus-mode
-			if (strcmp(focus_mode_string, "continuous-video") != 0 &&
-				!exynos_camera->recording_enabled)
-				exynos_camera_params_set_focus_mode(exynos_camera, 1);
+	if (scene_mode != exynos_camera->scene_mode || force) {
+		ALOGD("scene-mode: %s", scene_mode_string);
+		ALOGD("scene-mode: V4L2_CID_CAMERA_SCENE_MODE:", scene_mode);
+		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SCENE_MODE, scene_mode);
+		if (rc < 0) {
+			ALOGE("%s: s ctrl failed!", __func__);
+			return rc;
 		}
+		exynos_camera->scene_mode = scene_mode;
 	}
 	return rc;
 }
@@ -841,7 +830,7 @@ int exynos_camera_params_set_focus_mode(struct exynos_camera *exynos_camera, int
 						strcmp(scene_mode_string, "auto") != 0) {
 							ALOGE("%s: Forcing scene-mode %a after recording", __func__, scene_mode_string);
 							// Force scene-mode if not in auto-mode
-							exynos_camera_params_set_scene_mode(exynos_camera, 1);
+							exynos_camera_params_handle_scene_mode(exynos_camera, 1);
 					} else {
 						ALOGE("%s: Not forcing scene-mode %s after recording.", __func__, scene_mode_string);
 
@@ -1105,6 +1094,10 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 		if (exynos_camera->touch_focus_blocked == 0)
 			exynos_camera_params_handle_focus_mode(exynos_camera, doInit);
 	}
+
+	// Scene
+	exynos_camera_params_handle_scene_mode(exynos_camera, false);
+
 	// Zoom
 	zoom_supported_string = exynos_param_string_get(exynos_camera, "zoom-supported");
 	if (zoom_supported_string != NULL && strcmp(zoom_supported_string, "true") == 0) {
@@ -1184,7 +1177,7 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	}
 
 	// Scene-mode
-	exynos_camera_params_set_scene_mode(exynos_camera, force);
+	exynos_camera_params_handle_scene_mode(exynos_camera, force);
 
 	// Effect
 	effect_string = exynos_param_string_get(exynos_camera, "effect");
@@ -1806,7 +1799,7 @@ int exynos_camera_picture_start(struct exynos_camera *exynos_camera)
 	}
 
 	// Force scene-mode
-	exynos_camera_params_set_scene_mode(exynos_camera, 1);
+	exynos_camera_params_handle_scene_mode(exynos_camera, 1);
 
 	rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_CAPTURE, 0);
 	if (rc < 0) {
@@ -2406,7 +2399,7 @@ int exynos_camera_preview_start(struct exynos_camera *exynos_camera)
 	}
 
 	// Force scene-mode
-	exynos_camera_params_set_scene_mode(exynos_camera, 1);
+	exynos_camera_params_handle_scene_mode(exynos_camera, 1);
 
 	// Thread
 
@@ -2628,7 +2621,7 @@ int exynos_camera_recording_start(struct exynos_camera *exynos_camera)
 			strcmp(scene_mode_string, "auto") != 0) {
 				ALOGE("%s: Forcing scene-mode %a after recording", __func__, scene_mode_string);
 				// Force scene-mode if not in auto-mode
-				exynos_camera_params_set_scene_mode(exynos_camera, 1);
+				exynos_camera_params_handle_scene_mode(exynos_camera, 1);
 		} else {
 			ALOGE("%s: Not forcing scene-mode %s after recording.", __func__, scene_mode_string);
 
