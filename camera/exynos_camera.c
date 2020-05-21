@@ -798,6 +798,31 @@ int exynos_camera_params_handle_scene_mode(struct exynos_camera *exynos_camera, 
 	return rc;
 }
 
+void exynos_camera_params_handle_video_frame_format(struct exynos_camera *exynos_camera, bool force) {
+	char *video_frame_format_string;
+	int recording_format = V4L2_PIX_FMT_NV12;
+
+	video_frame_format_string = exynos_param_string_get(exynos_camera, "video-frame-format");
+	if (video_frame_format_string != NULL) {
+		if (strcmp(video_frame_format_string, "yuv420sp") == 0) {
+			recording_format = V4L2_PIX_FMT_NV12;
+		} else if (strcmp(video_frame_format_string, "yuv420p") == 0) {
+			recording_format = V4L2_PIX_FMT_YUV420;
+		} else if (strcmp(video_frame_format_string, "rgb565") == 0) {
+			recording_format = V4L2_PIX_FMT_RGB565;
+		} else if (strcmp(video_frame_format_string, "rgb8888") == 0) {
+			recording_format = V4L2_PIX_FMT_RGB32;
+		} else {
+			ALOGE("video-frame-format: Unsupported recording format: %s", video_frame_format_string);
+			recording_format = V4L2_PIX_FMT_NV12;
+		}
+	}
+	if (recording_format != exynos_camera->recording_format || force) {
+		ALOGD("video-frame-format: %s", video_frame_format_string);
+		exynos_camera->recording_format = recording_format;
+	}
+}
+
 void exynos_camera_params_handle_camera_sensor_mode(struct exynos_camera *exynos_camera) {
 	int rc = 0;
 	int camera_sensor_mode = SENSOR_CAMERA;
@@ -1063,8 +1088,6 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	char *video_size_string;
 	int recording_width = 0;
 	int recording_height = 0;
-	char *video_frame_format_string;
-	int recording_format;
 	int camera_sensor_mode;
 	int camera_sensor_output_size;
 
@@ -1229,27 +1252,8 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 		isChanged = false;
 	}
 
-	video_frame_format_string = exynos_param_string_get(exynos_camera, "video-frame-format");
-	if (video_frame_format_string != NULL) {
-		if (strcmp(video_frame_format_string, "yuv420sp") == 0) {
-			recording_format = V4L2_PIX_FMT_NV12;
-		} else if (strcmp(video_frame_format_string, "yuv420p") == 0) {
-			recording_format = V4L2_PIX_FMT_YUV420;
-		} else if (strcmp(video_frame_format_string, "rgb565") == 0) {
-			recording_format = V4L2_PIX_FMT_RGB565;
-		} else if (strcmp(video_frame_format_string, "rgb8888") == 0) {
-			recording_format = V4L2_PIX_FMT_RGB32;
-		} else {
-			ALOGE("%s: Unsupported recording format: %s", __func__, video_frame_format_string);
-			recording_format = V4L2_PIX_FMT_NV12;
-		}
-
-		if (recording_format != exynos_camera->recording_format) {
-			exynos_camera->recording_format = recording_format;
-			ALOGD("%s: video-frame-format => %s", __func__, video_frame_format_string);
-
-		}
-	}
+	// Recording format
+	exynos_camera_params_handle_video_frame_format(exynos_camera, false);
 
 	// Force recording-hint if focus-mode is in continuous-video
 	focus_mode_string = exynos_param_string_get(exynos_camera, "focus-mode");
