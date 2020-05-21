@@ -798,6 +798,36 @@ int exynos_camera_params_handle_scene_mode(struct exynos_camera *exynos_camera, 
 	return rc;
 }
 
+int exynos_camera_params_handle_video_size(struct exynos_camera *exynos_camera, bool force) {
+	int rc = 0;
+	char *video_size_string;
+	int recording_width = 0;
+	int recording_height = 0;
+	int camera_sensor_output_size = 0;
+
+	video_size_string = exynos_param_string_get(exynos_camera, "video-size");
+	if (video_size_string != NULL) {
+		sscanf(video_size_string, "%dx%d", &recording_width, &recording_height);
+	}
+	if (recording_width != exynos_camera->recording_width ||
+		recording_height != exynos_camera->recording_height ||
+		force) {
+		exynos_camera->recording_width = recording_width;
+		exynos_camera->recording_height = recording_height;
+		ALOGD("video-size: %d x %d", exynos_camera->recording_width, exynos_camera->recording_height);
+
+		camera_sensor_output_size = ((exynos_camera->preview_width & 0xffff) << 16) | (exynos_camera->preview_height & 0xffff);
+		ALOGD("video-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE: 0x%x (%dx%d)",
+			camera_sensor_output_size, exynos_camera->recording_width, exynos_camera->recording_height);
+		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE, camera_sensor_output_size);
+		if (rc < 0) {
+			ALOGE("video-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE failed!");
+			return rc;
+		}
+	}
+	return rc;
+}
+
 void exynos_camera_params_handle_video_frame_format(struct exynos_camera *exynos_camera, bool force) {
 	char *video_frame_format_string;
 	int recording_format = V4L2_PIX_FMT_NV12;
@@ -1067,8 +1097,6 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	char *recording_hint_string;
 	char *recording_preview_size_string;
 
-	int preview_width = 0;
-	int preview_height = 0;
 	char *preview_format_string;
 	int preview_format;
 	float preview_format_bpp;
@@ -1085,30 +1113,14 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	int jpeg_thumbnail_quality;
 	int jpeg_quality;
 
-	char *video_size_string;
-	int recording_width = 0;
-	int recording_height = 0;
-	int camera_sensor_mode;
-	int camera_sensor_output_size;
-
 	char *focus_mode_string;
-	char *focus_areas_string;
-	int focus_left, focus_top, focus_right, focus_bottom, focus_weigth;
-	int focus_x;
-	int focus_y;
-
-	int exposure_compensation;
-	int min_exposure_compensation;
-	int max_exposure_compensation;
 
 	int force = 0;
 
-	int w, h, preview_supported_width, preview_supported_height;
 	char *k;
 	int rc;
 
 	bool isChanged = false;
-	bool recordingSizeChanged = false;
 
 
 	if (exynos_camera == NULL)
@@ -1226,31 +1238,8 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 			ALOGE("%s: s ctrl failed!", __func__);
 	}
 
-	// Recording
-	video_size_string = exynos_param_string_get(exynos_camera, "video-size");
-	if (video_size_string != NULL) {
-		sscanf(video_size_string, "%dx%d", &recording_width, &recording_height);
-
-		if (recording_width != 0 && recording_width != exynos_camera->recording_width) {
-			exynos_camera->recording_width = recording_width;
-			isChanged = true;
-		}
-		if (recording_height != 0 && recording_height != exynos_camera->recording_height) {
-			exynos_camera->recording_height = recording_height;
-			isChanged = true;
-		}
-	}
-	if (isChanged) {
-		recordingSizeChanged = true;
-		ALOGD("%s: video-size => %d x %d", __func__, exynos_camera->recording_width, exynos_camera->recording_height);
-		ALOGD("%s: camera_sensor_output_size => %dx%d", __func__, exynos_camera->recording_width, exynos_camera->recording_height);
-		camera_sensor_output_size = ((exynos_camera->preview_width & 0xffff) << 16) | (exynos_camera->preview_height & 0xffff);
-		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE, camera_sensor_output_size);
-		if (rc < 0)
-			ALOGE("%s: s ctrl failed!", __func__);
-
-		isChanged = false;
-	}
+	// Recording video-size
+	exynos_camera_params_handle_video_size(exynos_camera, false);
 
 	// Recording format
 	exynos_camera_params_handle_video_frame_format(exynos_camera, false);
