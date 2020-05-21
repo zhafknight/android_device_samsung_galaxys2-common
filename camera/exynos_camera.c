@@ -478,11 +478,11 @@ int exynos_camera_params_init(struct exynos_camera *exynos_camera, int id)
 	return 0;
 }
 
-void exynos_camera_handle_preview_size(struct exynos_camera *exynos_camera) {
+int exynos_camera_handle_preview(struct exynos_camera *exynos_camera) {
 	char *k;
 	char *preview_size_string;
-	int w;
-	int h;
+	int w = exynos_camera->preview_requested_width;
+	int h = exynos_camera->preview_requested_height;
         int rc;
 
 	bool use_fallback = true;
@@ -490,60 +490,101 @@ void exynos_camera_handle_preview_size(struct exynos_camera *exynos_camera) {
 	int fallback_height = 0;
 	int camera_sensor_output_size;
 
+	char *preview_format_string;
+	int preview_format = V4L2_PIX_FMT_NV21;
+	float preview_format_bpp = 1.5f;
+	int preview_fps = 0;
+
+	// Preview format
+	preview_format_string = exynos_param_string_get(exynos_camera, "preview-format");
+	if (preview_format_string != NULL) {
+		if (strcmp(preview_format_string, "yuv420sp") == 0) {
+			preview_format = V4L2_PIX_FMT_NV21;
+			preview_format_bpp = 1.5f;
+		} else if (strcmp(preview_format_string, "yuv420p") == 0) {
+			preview_format = V4L2_PIX_FMT_YUV420;
+			preview_format_bpp = 1.5f;
+		} else if (strcmp(preview_format_string, "rgb565") == 0) {
+			preview_format = V4L2_PIX_FMT_RGB565;
+			preview_format_bpp = 2.0f;
+		} else if (strcmp(preview_format_string, "rgb8888") == 0) {
+			preview_format = V4L2_PIX_FMT_RGB32;
+			preview_format_bpp = 4.0f;
+		} else {
+			ALOGE("preview-format: Unsupported preview format: %s", preview_format_string);
+			preview_format = V4L2_PIX_FMT_NV21;
+			preview_format_bpp = 1.5f;
+		}
+
+		if (preview_format != exynos_camera->preview_format) {
+			ALOGD("preview-format: %s", __func__, preview_format_string);
+			exynos_camera->preview_format = preview_format;
+			exynos_camera->preview_format_bpp = preview_format_bpp;
+		}
+	}
+
+	// Preview-fps
+	preview_fps = exynos_param_int_get(exynos_camera, "preview-frame-rate");
+	if (preview_fps != exynos_camera->preview_fps) {
+		ALOGD("preview-fps: %d", preview_fps);
+		exynos_camera->preview_fps = preview_fps;
+	}
+
 	// Read requested preview-size
 	preview_size_string = exynos_param_string_get(exynos_camera, "preview-size");
 	if (preview_size_string != NULL) {
 		sscanf(preview_size_string, "%dx%d", &w, &h);
+	}
 
-		if ((exynos_camera->preview_requested_width == w) && (exynos_camera->preview_requested_height == h)) {
-			return;
+	if ((exynos_camera->preview_requested_width != w) || (exynos_camera->preview_requested_height != h)) {
+		ALOGD("Preview-size: %dpx x %dpx is requested", w, h);
+
+		exynos_camera->preview_requested_width = w;
+		exynos_camera->preview_requested_height = h;
+
+		k = exynos_param_string_get(exynos_camera, "preview-size-values");
+		while (w != 0 && h != 0) {
+			if (k == NULL)
+				break;
+
+			sscanf(k, "%dx%d", &w, &h);
+
+			if (fallback_width == 0)
+				fallback_width = w;
+			if (fallback_height == 0)
+				fallback_height = h;
+
+			// Look for same aspect ratio, but with same width or lower
+			if (((exynos_camera->preview_requested_width * h) / exynos_camera->preview_requested_height == w) && (exynos_camera->preview_requested_width >= w)) {
+				exynos_camera->preview_width = w;
+				exynos_camera->preview_height = h;
+				use_fallback = false;
+				break;
+			}
+
+			k = strchr(k, ',');
+			if (k == NULL)
+				break;
+
+			k++;
+		}
+
+		if (use_fallback) {
+			exynos_camera->preview_width = fallback_width;
+			exynos_camera->preview_height = fallback_height;
+		}
+
+		ALOGD("Preview-size: %dpx x %dpx is set %s", exynos_camera->preview_width, exynos_camera->preview_height, use_fallback ? "(fallback)" : "");
+		ALOGD("Preview-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE %x", camera_sensor_output_size);
+		camera_sensor_output_size = ((exynos_camera->preview_width & 0xffff) << 16) | (exynos_camera->preview_height & 0xffff);
+		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE, camera_sensor_output_size);
+		if (rc < 0) {
+			ALOGE("Preview-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE failed!");
+			return rc;
 		}
 	}
 
-	ALOGD("Preview-size: %dpx x %dpx is requested", w, h);
-
-	exynos_camera->preview_requested_width = w;
-	exynos_camera->preview_requested_height = h;
-
-	k = exynos_param_string_get(exynos_camera, "preview-size-values");
-	while (w != 0 && h != 0) {
-		if (k == NULL)
-			break;
-
-		sscanf(k, "%dx%d", &w, &h);
-
-		if (fallback_width == 0)
-			fallback_width = w;
-		if (fallback_height == 0)
-			fallback_height = h;
-
-		// Look for same aspect ratio, but with same width or lower
-		if (((exynos_camera->preview_requested_width * h) / exynos_camera->preview_requested_height == w) && (exynos_camera->preview_requested_width >= w)) {
-			exynos_camera->preview_width = w;
-			exynos_camera->preview_height = h;
-			use_fallback = false;
-			break;
-		}
-
-		k = strchr(k, ',');
-		if (k == NULL)
-			break;
-
-		k++;
-	}
-
-	if (use_fallback) {
-		exynos_camera->preview_width = fallback_width;
-		exynos_camera->preview_height = fallback_height;
-	}
-
-	ALOGD("Preview-size: %dpx x %dpx is set %s", exynos_camera->preview_width, exynos_camera->preview_height, use_fallback ? "(fallback)" : "");
-	ALOGD("Preview-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE %x", camera_sensor_output_size);
-	camera_sensor_output_size = ((exynos_camera->preview_width & 0xffff) << 16) | (exynos_camera->preview_height & 0xffff);
-	rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE, camera_sensor_output_size);
-	if (rc < 0)
-		ALOGE("Preview-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE failed!");
-
+	return rc;
 }
 
 int exynos_camera_params_handle_iso(struct exynos_camera *exynos_camera, int force)
@@ -1136,11 +1177,6 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	char *recording_hint_string;
 	char *recording_preview_size_string;
 
-	char *preview_format_string;
-	int preview_format;
-	float preview_format_bpp;
-	int preview_fps;
-
 	char *picture_size_string;
 	int picture_width = 0;
 	int picture_height = 0;
@@ -1167,43 +1203,7 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	}
 
 	// Preview
-	exynos_camera_handle_preview_size(exynos_camera);
-
-	preview_format_string = exynos_param_string_get(exynos_camera, "preview-format");
-	if (preview_format_string != NULL) {
-		if (strcmp(preview_format_string, "yuv420sp") == 0) {
-			preview_format = V4L2_PIX_FMT_NV21;
-			preview_format_bpp = 1.5f;
-		} else if (strcmp(preview_format_string, "yuv420p") == 0) {
-			preview_format = V4L2_PIX_FMT_YUV420;
-			preview_format_bpp = 1.5f;
-		} else if (strcmp(preview_format_string, "rgb565") == 0) {
-			preview_format = V4L2_PIX_FMT_RGB565;
-			preview_format_bpp = 2.0f;
-		} else if (strcmp(preview_format_string, "rgb8888") == 0) {
-			preview_format = V4L2_PIX_FMT_RGB32;
-			preview_format_bpp = 4.0f;
-		} else {
-			ALOGE("%s: Unsupported preview format: %s", __func__, preview_format_string);
-			preview_format = V4L2_PIX_FMT_NV21;
-			preview_format_bpp = 1.5f;
-		}
-
-		if (preview_format != exynos_camera->preview_format) {
-			exynos_camera->preview_format = preview_format;
-			exynos_camera->preview_format_bpp = preview_format_bpp;
-			ALOGD("%s: preview-format => %s", __func__, preview_format_string);
-		}
-	}
-
-	preview_fps = exynos_param_int_get(exynos_camera, "preview-frame-rate");
-	if (preview_fps != exynos_camera->preview_fps) {
-		if (preview_fps > 0)
-			exynos_camera->preview_fps = preview_fps;
-		else
-			exynos_camera->preview_fps = 0;
-		ALOGD("%s: preview-fps => %d ", __func__, preview_fps);
-	}
+	exynos_camera_handle_preview(exynos_camera);
 
 	// Picture
 	picture_format_string = exynos_param_string_get(exynos_camera, "picture-format");
