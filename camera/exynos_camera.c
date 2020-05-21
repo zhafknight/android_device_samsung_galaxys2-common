@@ -616,6 +616,40 @@ int exynos_camera_params_handle_effect(struct exynos_camera *exynos_camera, int 
 	return rc;
 }
 
+int exynos_camera_params_handle_whitebalance(struct exynos_camera *exynos_camera, int force)
+{
+	int rc = 0;
+	char *whitebalance_string;
+	int whitebalance = WHITE_BALANCE_AUTO;
+
+	whitebalance_string = exynos_param_string_get(exynos_camera, "whitebalance");
+	if (whitebalance_string != NULL) {
+		if (strcmp(whitebalance_string, "auto") == 0)
+			whitebalance = WHITE_BALANCE_AUTO;
+		else if (strcmp(whitebalance_string, "incandescent") == 0)
+			whitebalance = WHITE_BALANCE_TUNGSTEN;
+		else if (strcmp(whitebalance_string, "fluorescent") == 0)
+			whitebalance = WHITE_BALANCE_FLUORESCENT;
+		else if (strcmp(whitebalance_string, "daylight") == 0)
+			whitebalance = WHITE_BALANCE_SUNNY;
+		else if (strcmp(whitebalance_string, "cloudy-daylight") == 0)
+			whitebalance = WHITE_BALANCE_CLOUDY;
+		else
+			whitebalance = WHITE_BALANCE_AUTO;
+	}
+	if (whitebalance != exynos_camera->whitebalance || force) {
+		ALOGD("whitebalance: %s" , whitebalance_string);
+		ALOGD("whitebalance: V4L2_CID_CAMERA_WHITE_BALANCE: %d" , whitebalance);
+		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_WHITE_BALANCE, whitebalance);
+		if (rc < 0) {
+			ALOGE("%s: s ctrl failed!", __func__);
+			return rc;
+		}
+		exynos_camera->whitebalance = whitebalance;
+	}
+	return rc;
+}
+
 int exynos_camera_params_handle_scene_mode(struct exynos_camera *exynos_camera, int force)
 {
 	char *scene_mode_string;
@@ -959,9 +993,6 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	int min_exposure_compensation;
 	int max_exposure_compensation;
 
-	char *whitebalance_string;
-	int whitebalance;
-
 	int force = 0;
 
 	int w, h, preview_supported_width, preview_supported_height;
@@ -1216,29 +1247,7 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	}
 
 	// WB
-	whitebalance_string = exynos_param_string_get(exynos_camera, "whitebalance");
-	if (whitebalance_string != NULL) {
-		if (strcmp(whitebalance_string, "auto") == 0)
-			whitebalance = WHITE_BALANCE_AUTO;
-		else if (strcmp(whitebalance_string, "incandescent") == 0)
-			whitebalance = WHITE_BALANCE_TUNGSTEN;
-		else if (strcmp(whitebalance_string, "fluorescent") == 0)
-			whitebalance = WHITE_BALANCE_FLUORESCENT;
-		else if (strcmp(whitebalance_string, "daylight") == 0)
-			whitebalance = WHITE_BALANCE_SUNNY;
-		else if (strcmp(whitebalance_string, "cloudy-daylight") == 0)
-			whitebalance = WHITE_BALANCE_CLOUDY;
-		else
-			whitebalance = WHITE_BALANCE_AUTO;
-
-		if (whitebalance != exynos_camera->whitebalance || force) {
-			exynos_camera->whitebalance = whitebalance;
-			ALOGD("%s: exposure-whitebalance => %d %s" , __func__, exynos_camera->whitebalance, whitebalance_string);
-			rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_WHITE_BALANCE, whitebalance);
-			if (rc < 0)
-				ALOGE("%s: s ctrl failed!", __func__);
-		}
-	}
+	exynos_camera_params_handle_whitebalance(exynos_camera, force);
 
 	// Scene-mode
 	exynos_camera_params_handle_scene_mode(exynos_camera, force);
