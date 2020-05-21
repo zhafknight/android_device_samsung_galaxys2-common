@@ -1011,7 +1011,7 @@ void exynos_camera_params_block_touch_focus(struct exynos_camera *exynos_camera)
 	} else if (param_focus_mode == FOCUS_MODE_AUTO && exynos_camera->focus_mode == FOCUS_MODE_CONTINOUS) {
 		ALOGD("%s: Blocked touch focus in continuous focus-mode.", __func__);
 		exynos_param_string_set(exynos_camera, "focus-mode", "continuous-picture");
-		exynos_camera->touch_focus_blocked = 2;
+		exynos_camera->touch_focus_blocked = 3;
 	}
 }
 
@@ -1055,7 +1055,13 @@ void exynos_camera_params_handle_focus_mode(struct exynos_camera *exynos_camera,
 		return;
 	}
 
+
 	ALOGD("focus-mode: %s", focus_mode_string);
+	if (exynos_camera->recording_enabled) {
+		ALOGE("focus-mode: Can't change during recording");
+		return;
+	}
+
 	if (exynos_camera->focus_mode == FOCUS_MODE_AUTO) {
 		ALOGD("focus-mode: %s V4L2_CID_CAMERA_SET_AUTO_FOCUS: %d AUTO_FOCUS_OFF", focus_mode_string, AUTO_FOCUS_OFF);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SET_AUTO_FOCUS, AUTO_FOCUS_OFF);
