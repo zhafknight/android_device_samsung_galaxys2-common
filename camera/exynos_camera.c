@@ -546,6 +546,43 @@ void exynos_camera_handle_preview_size(struct exynos_camera *exynos_camera) {
 
 }
 
+int exynos_camera_params_handle_iso(struct exynos_camera *exynos_camera, int force)
+{
+	int rc = 0;
+	char *iso_string;
+	int iso = ISO_AUTO;
+
+	iso_string = exynos_param_string_get(exynos_camera, "iso");
+	if (iso_string != NULL) {
+		if (strcmp(iso_string, "auto") == 0)
+			iso = ISO_AUTO;
+		else if (strcmp(iso_string, "ISO50") == 0)
+			iso = ISO_50;
+		else if (strcmp(iso_string, "ISO100") == 0)
+			iso = ISO_100;
+		else if (strcmp(iso_string, "ISO200") == 0)
+			iso = ISO_200;
+		else if (strcmp(iso_string, "ISO400") == 0)
+			iso = ISO_400;
+		else if (strcmp(iso_string, "ISO800") == 0)
+			iso = ISO_800;
+		else
+			iso = ISO_AUTO;
+	}
+	if (iso != exynos_camera->iso || force) {
+		ALOGD("iso: %s", iso_string);
+		ALOGD("iso: V4L2_CID_CAMERA_ISO: %d", iso);
+		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_ISO, iso);
+		if (rc < 0) {
+			ALOGD("iso: V4L2_CID_CAMERA_ISO failed!");
+			return rc;
+		}
+		exynos_camera->iso = iso;
+	}
+	return rc;
+
+}
+
 int exynos_camera_params_handle_effect(struct exynos_camera *exynos_camera, int force)
 {
 	int rc = 0;
@@ -925,9 +962,6 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	char *whitebalance_string;
 	int whitebalance;
 
-	char *iso_string;
-	int iso;
-
 	int force = 0;
 
 	int w, h, preview_supported_width, preview_supported_height;
@@ -1213,31 +1247,7 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	exynos_camera_params_handle_effect(exynos_camera, force);
 
 	// ISO
-	iso_string = exynos_param_string_get(exynos_camera, "iso");
-	if (iso_string != NULL) {
-		if (strcmp(iso_string, "auto") == 0)
-			iso = ISO_AUTO;
-		else if (strcmp(iso_string, "ISO50") == 0)
-			iso = ISO_50;
-		else if (strcmp(iso_string, "ISO100") == 0)
-			iso = ISO_100;
-		else if (strcmp(iso_string, "ISO200") == 0)
-			iso = ISO_200;
-		else if (strcmp(iso_string, "ISO400") == 0)
-			iso = ISO_400;
-		else if (strcmp(iso_string, "ISO800") == 0)
-			iso = ISO_800;
-		else
-			iso = ISO_AUTO;
-
-		if (iso != exynos_camera->iso || force) {
-			exynos_camera->iso = iso;
-			ALOGD("%s: iso => %d %s", __func__, exynos_camera->iso, iso_string);
-			rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_ISO, iso);
-			if (rc < 0)
-				ALOGE("%s: s ctrl failed!", __func__);
-		}
-	}
+	exynos_camera_params_handle_iso(exynos_camera, force);
 
 	return 0;
 }
