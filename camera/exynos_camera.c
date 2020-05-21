@@ -546,6 +546,39 @@ void exynos_camera_handle_preview_size(struct exynos_camera *exynos_camera) {
 
 }
 
+int exynos_camera_params_handle_effect(struct exynos_camera *exynos_camera, int force)
+{
+	int rc = 0;
+	char *effect_string;
+	int effect = IMAGE_EFFECT_NONE;
+	effect_string = exynos_param_string_get(exynos_camera, "effect");
+	if (effect_string != NULL) {
+		if (strcmp(effect_string, "auto") == 0)
+			effect = IMAGE_EFFECT_NONE;
+		else if (strcmp(effect_string, "mono") == 0)
+			effect = IMAGE_EFFECT_BNW;
+		else if (strcmp(effect_string, "negative") == 0)
+			effect = IMAGE_EFFECT_NEGATIVE;
+		else if (strcmp(effect_string, "sepia") == 0)
+			effect = IMAGE_EFFECT_SEPIA;
+		else if (strcmp(effect_string, "aqua") == 0)
+			effect = IMAGE_EFFECT_AQUA;
+		else
+			effect = IMAGE_EFFECT_NONE;
+	}
+	if (effect != exynos_camera->effect || force) {
+		ALOGD("effect: %s",effect_string);
+		ALOGD("effect: V4L2_CID_CAMERA_EFFECT %d",effect);
+		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_EFFECT, effect);
+		if (rc < 0) {
+			ALOGE("effect: V4L2_CID_CAMERA_EFFECT failed!");
+			return rc;
+		}
+		exynos_camera->effect = effect;
+	}
+	return rc;
+}
+
 int exynos_camera_params_handle_scene_mode(struct exynos_camera *exynos_camera, int force)
 {
 	char *scene_mode_string;
@@ -892,9 +925,6 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	char *whitebalance_string;
 	int whitebalance;
 
-	char *effect_string;
-	int effect;
-
 	char *iso_string;
 	int iso;
 
@@ -1180,29 +1210,7 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	exynos_camera_params_handle_scene_mode(exynos_camera, force);
 
 	// Effect
-	effect_string = exynos_param_string_get(exynos_camera, "effect");
-	if (effect_string != NULL) {
-		if (strcmp(effect_string, "auto") == 0)
-			effect = IMAGE_EFFECT_NONE;
-		else if (strcmp(effect_string, "mono") == 0)
-			effect = IMAGE_EFFECT_BNW;
-		else if (strcmp(effect_string, "negative") == 0)
-			effect = IMAGE_EFFECT_NEGATIVE;
-		else if (strcmp(effect_string, "sepia") == 0)
-			effect = IMAGE_EFFECT_SEPIA;
-		else if (strcmp(effect_string, "aqua") == 0)
-			effect = IMAGE_EFFECT_AQUA;
-		else
-			effect = IMAGE_EFFECT_NONE;
-
-		if (effect != exynos_camera->effect || force) {
-			exynos_camera->effect = effect;
-			ALOGD("%s: effect => %d %s", __func__, exynos_camera->effect, effect_string);
-			rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_EFFECT, effect);
-			if (rc < 0)
-				ALOGE("%s: s ctrl failed!", __func__);
-		}
-	}
+	exynos_camera_params_handle_effect(exynos_camera, force);
 
 	// ISO
 	iso_string = exynos_param_string_get(exynos_camera, "iso");
