@@ -840,6 +840,42 @@ int exynos_camera_params_handle_scene_mode(struct exynos_camera *exynos_camera, 
 	return rc;
 }
 
+int exynos_camera_handle_picture(struct exynos_camera *exynos_camera, bool force)
+{
+	char *picture_format_string;
+	int picture_format;
+	char *picture_size_string;
+	int picture_width = 0;
+	int picture_height = 0;
+
+	picture_format_string = exynos_param_string_get(exynos_camera, "picture-format");
+	if (picture_format_string != NULL) {
+		if (strcmp(picture_format_string, "jpeg") == 0) {
+			picture_format = V4L2_PIX_FMT_JPEG;
+		} else {
+			ALOGE("picture-format: Unsupported picture format: %s", picture_format_string);
+			picture_format = V4L2_PIX_FMT_JPEG;
+		}
+	}
+	if (picture_format != exynos_camera->picture_format || force) {
+		ALOGD("picture-format: %s", __func__, picture_format_string);
+		exynos_camera->picture_format = picture_format;
+	}
+
+
+	picture_size_string = exynos_param_string_get(exynos_camera, "picture-size");
+	if (picture_size_string != NULL) {
+		sscanf(picture_size_string, "%dx%d", &picture_width, &picture_height);
+	}
+	if ((picture_width > 0 && picture_height > 0) &&
+	     ((picture_width != exynos_camera->picture_width || picture_height != exynos_camera->picture_height || force))) {
+		ALOGD("picture-size: %d x %d", exynos_camera->picture_width, exynos_camera->picture_height);
+		exynos_camera->picture_width = picture_width;
+		exynos_camera->picture_height = picture_height;
+	}
+	return 0;
+}
+
 int exynos_camera_params_handle_jpeg(struct exynos_camera *exynos_camera, bool force) {
 	int rc = 0;
 	int jpeg_thumbnail_width = 0;
@@ -1184,12 +1220,6 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	char *recording_hint_string;
 	char *recording_preview_size_string;
 
-	char *picture_size_string;
-	int picture_width = 0;
-	int picture_height = 0;
-	char *picture_format_string;
-	int picture_format;
-
 	char *focus_mode_string;
 
 	int force = 0;
@@ -1213,40 +1243,7 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	exynos_camera_handle_preview(exynos_camera);
 
 	// Picture
-	picture_format_string = exynos_param_string_get(exynos_camera, "picture-format");
-	if (picture_format_string != NULL) {
-		if (strcmp(picture_format_string, "jpeg") == 0) {
-			picture_format = V4L2_PIX_FMT_JPEG;
-		} else {
-			ALOGE("%s: Unsupported picture format: %s", __func__, picture_format_string);
-			picture_format = V4L2_PIX_FMT_JPEG;
-		}
-
-		if (picture_format != exynos_camera->picture_format) {
-			ALOGD("%s: picture-format => %s", __func__, picture_format_string);
-			exynos_camera->picture_format = picture_format;
-		}
-	}
-
-	picture_size_string = exynos_param_string_get(exynos_camera, "picture-size");
-	if (picture_size_string != NULL) {
-		sscanf(picture_size_string, "%dx%d", &picture_width, &picture_height);
-
-		if (picture_width != 0 && picture_width != exynos_camera->picture_width)
-		{
-			exynos_camera->picture_width = picture_width;
-			isChanged = true;
-		}
-		if (picture_height != 0 && picture_height != exynos_camera->picture_height) {
-			exynos_camera->picture_height = picture_height;
-			isChanged = true;
-		}
-	}
-	if (isChanged) {
-		ALOGD("%s: picture-size => %d x %d", __func__, exynos_camera->picture_width, exynos_camera->picture_height);
-		isChanged = false;
-	}
-
+	exynos_camera_handle_picture(exynos_camera, false);
 
 	// JPEG
 	exynos_camera_params_handle_jpeg(exynos_camera, false);
@@ -2039,6 +2036,11 @@ int exynos_camera_auto_focus_start(struct exynos_camera *exynos_camera)
 	if (exynos_camera->touch_focus_blocked > 0) {
 		ALOGD("%s: Blocked touch focus when in continuous focus-mode.", __func__);
 		exynos_camera->touch_focus_blocked--;
+		return 0;
+	}
+
+	if (exynos_camera->focus_mode != FOCUS_MODE_AUTO) {
+		ALOGE("%s: Can't auto-focus. focus-mode is not set to FOCUS_MODE_AUTO.", __func__);
 		return 0;
 	}
 
