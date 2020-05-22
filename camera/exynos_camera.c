@@ -537,7 +537,7 @@ int exynos_camera_handle_preview(struct exynos_camera *exynos_camera) {
 	}
 
 	if ((exynos_camera->preview_requested_width != w) || (exynos_camera->preview_requested_height != h)) {
-		ALOGD("Preview-size: %dpx x %dpx is requested", w, h);
+		ALOGD("preview-size: %dpx x %dpx is requested", w, h);
 
 		exynos_camera->preview_requested_width = w;
 		exynos_camera->preview_requested_height = h;
@@ -574,12 +574,13 @@ int exynos_camera_handle_preview(struct exynos_camera *exynos_camera) {
 			exynos_camera->preview_height = fallback_height;
 		}
 
-		ALOGD("Preview-size: %dpx x %dpx is set %s", exynos_camera->preview_width, exynos_camera->preview_height, use_fallback ? "(fallback)" : "");
-		ALOGD("Preview-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE %x", camera_sensor_output_size);
+		ALOGD("preview-size: %dpx x %dpx is set %s", exynos_camera->preview_width, exynos_camera->preview_height, use_fallback ? "(fallback)" : "");
 		camera_sensor_output_size = ((exynos_camera->preview_width & 0xffff) << 16) | (exynos_camera->preview_height & 0xffff);
+		ALOGD("preview-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE: 0x%x (%dx%d)",
+			camera_sensor_output_size, exynos_camera->preview_width, exynos_camera->preview_height);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE, camera_sensor_output_size);
 		if (rc < 0) {
-			ALOGE("Preview-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE failed!");
+			ALOGE("preview-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE failed!");
 			return rc;
 		}
 	}
@@ -646,7 +647,7 @@ int exynos_camera_params_handle_effect(struct exynos_camera *exynos_camera, int 
 	}
 	if (effect != exynos_camera->effect || force) {
 		ALOGD("effect: %s",effect_string);
-		ALOGD("effect: V4L2_CID_CAMERA_EFFECT %d",effect);
+		ALOGD("effect: V4L2_CID_CAMERA_EFFECT: %d",effect);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_EFFECT, effect);
 		if (rc < 0) {
 			ALOGE("effect: V4L2_CID_CAMERA_EFFECT failed!");
@@ -736,11 +737,11 @@ int exynos_camera_params_handle_exposure_compensation(struct exynos_camera *exyn
 		return -1;
 	}
 	if (exposure_compensation != exynos_camera->exposure_compensation || force) {
-		ALOGD("exposure-compensation: %d" , __func__, exposure_compensation);
-		ALOGD("exposure-compensation: V4L2_CID_CAMERA_BRIGHTNESS: %d" , __func__, exposure_compensation);
+		ALOGD("exposure-compensation: %d", exposure_compensation);
+		ALOGD("exposure-compensation: V4L2_CID_CAMERA_BRIGHTNESS: %d", exposure_compensation);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_BRIGHTNESS, exposure_compensation);
 		if (rc < 0) {
-			ALOGE("V4L2_CID_CAMERA_BRIGHTNESS failed!");
+			ALOGE("exposure-compensation: V4L2_CID_CAMERA_BRIGHTNESS failed!");
 			return rc;
 		}
 		exynos_camera->exposure_compensation = exposure_compensation;
@@ -774,7 +775,7 @@ int exynos_camera_params_handle_whitebalance(struct exynos_camera *exynos_camera
 		ALOGD("whitebalance: V4L2_CID_CAMERA_WHITE_BALANCE: %d" , whitebalance);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_WHITE_BALANCE, whitebalance);
 		if (rc < 0) {
-			ALOGE("%s: s ctrl failed!", __func__);
+			ALOGE("whitebalance: V4L2_CID_CAMERA_WHITE_BALANCE failed!");
 			return rc;
 		}
 		exynos_camera->whitebalance = whitebalance;
@@ -828,10 +829,10 @@ int exynos_camera_params_handle_scene_mode(struct exynos_camera *exynos_camera, 
 
 	if (scene_mode != exynos_camera->scene_mode || force) {
 		ALOGD("scene-mode: %s", scene_mode_string);
-		ALOGD("scene-mode: V4L2_CID_CAMERA_SCENE_MODE:", scene_mode);
+		ALOGD("scene-mode: V4L2_CID_CAMERA_SCENE_MODE: %d", scene_mode);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SCENE_MODE, scene_mode);
 		if (rc < 0) {
-			ALOGE("%s: s ctrl failed!", __func__);
+			ALOGE("scene-mode: V4L2_CID_CAMERA_SCENE_MODE failed!");
 			return rc;
 		}
 		exynos_camera->scene_mode = scene_mode;
@@ -993,7 +994,7 @@ bool exynos_camera_params_handle_focus_areas(struct exynos_camera *exynos_camera
 	ALOGD("focus-area: V4L2_CID_CAMERA_OBJECT_POSITION_Y: %d", focus_y);
 	rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_OBJECT_POSITION_Y, focus_y);
 	if (rc < 0) {
-		ALOGE("focus-area: s ctrl V4L2_CID_CAMERA_OBJECT_POSITION_Y failed!");
+		ALOGE("focus-area: V4L2_CID_CAMERA_OBJECT_POSITION_Y failed!");
 		return false;
 	}
 
@@ -1066,13 +1067,13 @@ void exynos_camera_params_handle_focus_mode(struct exynos_camera *exynos_camera,
 		ALOGD("focus-mode: %s V4L2_CID_CAMERA_SET_AUTO_FOCUS: %d AUTO_FOCUS_OFF", focus_mode_string, AUTO_FOCUS_OFF);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SET_AUTO_FOCUS, AUTO_FOCUS_OFF);
 		if (rc < 0) {
-			ALOGE("focus-mode: %s V4L2_CID_CAMERA_SET_AUTO_FOCUS failed!", focus_mode_string);
+			ALOGE("focus-mode: V4L2_CID_CAMERA_SET_AUTO_FOCUS failed!");
 			return;
 		}
 		ALOGD("focus-mode: %s V4L2_CID_CAMERA_TOUCH_AF_START_STOP: %d", focus_mode_string, 0);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_TOUCH_AF_START_STOP, 0);
 		if (rc < 0) {
-			ALOGE("focus-mode: %s V4L2_CID_CAMERA_TOUCH_AF_START_STOP failed!", focus_mode_string);
+			ALOGE("focus-mode: V4L2_CID_CAMERA_TOUCH_AF_START_STOP failed!");
 			return;
 		}
 	}
@@ -1080,7 +1081,7 @@ void exynos_camera_params_handle_focus_mode(struct exynos_camera *exynos_camera,
 	ALOGD("focus-mode: %s V4L2_CID_CAMERA_FOCUS_MODE: %d", focus_mode_string, focus_mode);
 	rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_FOCUS_MODE, focus_mode);
 	if (rc < 0) {
-		ALOGE("focus-mode: %s V4L2_CID_CAMERA_FOCUS_MODE failed!", focus_mode_string);
+		ALOGE("focus-mode: V4L2_CID_CAMERA_FOCUS_MODE failed!");
 		return;
 	}
 
@@ -1088,21 +1089,21 @@ void exynos_camera_params_handle_focus_mode(struct exynos_camera *exynos_camera,
 		ALOGD("focus-mode: %s V4L2_CID_CAMERA_SET_AUTO_FOCUS: %d AUTO_FOCUS_OFF", focus_mode_string, AUTO_FOCUS_OFF);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SET_AUTO_FOCUS, AUTO_FOCUS_OFF);
 		if (rc < 0) {
-			ALOGE("focus-mode: %s V4L2_CID_CAMERA_SET_AUTO_FOCUS failed!", focus_mode_string);
+			ALOGE("focus-mode: V4L2_CID_CAMERA_SET_AUTO_FOCUS failed!");
 			return;
 		}
 	} else if (focus_mode == FOCUS_MODE_CONTINOUS) {
 		ALOGD("focus-mode: %s V4L2_CID_CAMERA_SET_AUTO_FOCUS: %d AUTO_FOCUS_ON", focus_mode_string, AUTO_FOCUS_ON);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SET_AUTO_FOCUS, AUTO_FOCUS_ON);
 		if (rc < 0) {
-			ALOGE("focus-mode: %s V4L2_CID_CAMERA_SET_AUTO_FOCUS failed!", focus_mode_string);
+			ALOGE("focus-mode: V4L2_CID_CAMERA_SET_AUTO_FOCUS failed!");
 			return;
 		}
 	} else if (focus_mode == FOCUS_MODE_AUTO) {
 		ALOGD("focus-mode: %s V4L2_CID_CAMERA_TOUCH_AF_START_STOP: %d", focus_mode_string, 1);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_TOUCH_AF_START_STOP, 1);
 		if (rc < 0) {
-			ALOGE("focus-mode: %s V4L2_CID_CAMERA_TOUCH_AF_START_STOP failed!", focus_mode_string);
+			ALOGE("focus-mode: V4L2_CID_CAMERA_TOUCH_AF_START_STOP failed!");
 			return;
 		}
 	}
@@ -3073,7 +3074,7 @@ int exynos_camera_set_parameters(struct camera_device *dev,
 	struct exynos_camera *exynos_camera;
 	int rc;
 
-	ALOGD("%s(%p, %s)", __func__, dev, params);
+//	ALOGD("%s(%p, %s)", __func__, dev, params);
 
 	if (dev == NULL || dev->priv == NULL || params == NULL)
 		return -EINVAL;
