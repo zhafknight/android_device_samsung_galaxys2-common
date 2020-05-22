@@ -483,7 +483,6 @@ int exynos_camera_handle_preview(struct exynos_camera *exynos_camera) {
 	char *preview_size_string;
 	int w = exynos_camera->preview_requested_width;
 	int h = exynos_camera->preview_requested_height;
-        int rc;
 
 	bool use_fallback = true;
 	int fallback_width = 0;
@@ -575,17 +574,9 @@ int exynos_camera_handle_preview(struct exynos_camera *exynos_camera) {
 		}
 
 		ALOGD("preview-size: %dpx x %dpx is set %s", exynos_camera->preview_width, exynos_camera->preview_height, use_fallback ? "(fallback)" : "");
-		camera_sensor_output_size = ((exynos_camera->preview_width & 0xffff) << 16) | (exynos_camera->preview_height & 0xffff);
-		ALOGD("preview-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE: 0x%x (%dx%d)",
-			camera_sensor_output_size, exynos_camera->preview_width, exynos_camera->preview_height);
-		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE, camera_sensor_output_size);
-		if (rc < 0) {
-			ALOGE("preview-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE failed!");
-			return rc;
-		}
 	}
 
-	return rc;
+	return 0;
 }
 
 int exynos_camera_params_handle_iso(struct exynos_camera *exynos_camera, int force)
@@ -933,7 +924,7 @@ int exynos_camera_params_handle_video_size(struct exynos_camera *exynos_camera, 
 		exynos_camera->recording_height = recording_height;
 		ALOGD("video-size: %d x %d", exynos_camera->recording_width, exynos_camera->recording_height);
 
-		camera_sensor_output_size = ((exynos_camera->preview_width & 0xffff) << 16) | (exynos_camera->preview_height & 0xffff);
+		camera_sensor_output_size = ((exynos_camera->recording_width & 0xffff) << 16) | (exynos_camera->recording_height & 0xffff);
 		ALOGD("video-size: V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE: 0x%x (%dx%d)",
 			camera_sensor_output_size, exynos_camera->recording_width, exynos_camera->recording_height);
 		rc = exynos_v4l2_s_ctrl(exynos_camera, 0, V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE, camera_sensor_output_size);
@@ -2598,6 +2589,12 @@ int exynos_camera_recording_start(struct exynos_camera *exynos_camera)
 	if (exynos_camera->recording_enabled) {
 		ALOGE("Recording was already started!");
 		return 0;
+	}
+
+	rc = exynos_camera_params_handle_video_size(exynos_camera, true);
+	if (rc < 0) {
+		ALOGE("%s: Ensure video-size failed!", __func__);
+		goto error;
 	}
 
 	// V4L2
