@@ -1,7 +1,5 @@
 type cpboot-daemon, domain;
 
-permissive cpboot-daemon;
-
 allow cpboot-daemon cgroup:dir { create add_name };
 allow cpboot-daemon cgroup:file read;
 allow cpboot-daemon device:dir { write remove_name add_name };
