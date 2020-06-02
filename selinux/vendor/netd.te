@@ -3,3 +3,4 @@ allow netd sysfs_rmnet:dir search;
 allow netd sysfs_rmnet:file { open write };
 allow netd device:file { open write };
 allow netd hal_gnss_default:fd use;
+allow netd hal_gnss_default:tcp_socket { getopt read setopt write };
