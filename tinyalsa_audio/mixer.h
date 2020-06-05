@@ -23,7 +23,7 @@
 #include <hardware/audio.h>
 #include <system/audio.h>
 
-#define TINYALSA_MIXER_CONFIG_FILE	"/system/etc/tinyalsa-audio.xml"
+#define TINYALSA_MIXER_CONFIG_FILE	"/vendor/etc/tinyalsa-audio.xml"
 
 struct list_head {
 	struct list_head *prev;
