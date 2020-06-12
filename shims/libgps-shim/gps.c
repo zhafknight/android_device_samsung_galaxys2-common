@@ -55,51 +55,55 @@ static GpsFilterLocation get_filterlocation(float accuracy) {
 
 static GpsLocation reportLocation;
 
+static GpsCallbacks_vendor vendor_gpsCallbacks;
+
 /* GPS methods */
-GpsInterface* (*vendor_get_gps_interface)(struct gps_device_t* dev);
-void* (*vendor_gps_get_extension)(const char* name);
-int (*vendor_gps_init)(GpsCallbacks* gpsCallbacks);
-int (*vendor_gps_start)();
-int (*vendor_gps_stop)();
-void (*vendor_gps_cleanup)();
-int (*vendor_gps_inject_time)(GpsUtcTime time, int64_t timeReference,
+static GpsInterface* (*vendor_get_gps_interface)(struct gps_device_t* dev);
+static void* (*vendor_gps_get_extension)(const char* name);
+static int (*vendor_gps_init)(GpsCallbacks* gpsCallbacks);
+static int (*vendor_gps_start)();
+static int (*vendor_gps_stop)();
+static void (*vendor_gps_cleanup)();
+static int (*vendor_gps_inject_time)(GpsUtcTime time, int64_t timeReference,
                          int uncertainty);
-int (*vendor_gps_inject_location)(double latitude, double longitude, float accuracy);
-void (*vendor_gps_delete_aiding_data)(GpsAidingData flags);
-int (*vendor_gps_set_position_mode)(GpsPositionMode mode, GpsPositionRecurrence recurrence,
+static int (*vendor_gps_inject_location)(double latitude, double longitude, float accuracy);
+static void (*vendor_gps_delete_aiding_data)(GpsAidingData flags);
+static int (*vendor_gps_set_position_mode)(GpsPositionMode mode, GpsPositionRecurrence recurrence,
             uint32_t min_interval, uint32_t preferred_accuracy, uint32_t preferred_time);
 
 
 /* AGPS methods */
-void (*vendor_agps_init)(AGpsCallbacks* callbacks);
-int (*vendor_agps_data_conn_open)(const char* apn);
-int (*vendor_agps_data_conn_closed)();
-int (*vendor_agps_data_conn_failed)();
-int (*vendor_agps_set_server)(AGpsType type, const char* hostname, int port);
-int (*vendor_agps_data_conn_open_with_apn_ip_type)(
+static void (*vendor_agps_init)(AGpsCallbacks* callbacks);
+static int (*vendor_agps_data_conn_open)(const char* apn);
+static int (*vendor_agps_data_conn_closed)();
+static int (*vendor_agps_data_conn_failed)();
+static int (*vendor_agps_set_server)(AGpsType type, const char* hostname, int port);
+static int (*vendor_agps_data_conn_open_with_apn_ip_type)(
             const char* apn,
             ApnIpType apnIpType);
 
 /* AGPS callback-methods */
-void (* vendor_agps_status_callback)(AGpsStatus* status);
-pthread_t (* vendor_agps_cb_create_thread_cb)(const char* name, void (*start)(void *), void* arg);
+static void (* vendor_agps_status_callback)(AGpsStatus* status);
+static pthread_t (* vendor_agps_cb_create_thread_cb)(const char* name, void (*start)(void *), void* arg);
 
 /* AGPS-RIL methods */
-void (*vendor_agpsril_init)( AGpsRilCallbacks* callbacks );
-void (*vendor_agpsril_set_ref_location)(const AGpsRefLocation_vendor *agps_reflocation, size_t sz_struct);
-void (*vendor_agpsril_set_set_id) (AGpsSetIDType type, const char* setid);
-void (*vendor_agpsril_ni_message) (uint8_t *msg, size_t len);
-void (*vendor_agpsril_update_network_state) (int connected, int type, int roaming, const char* extra_info);
-void (*vendor_agpsril_update_network_availability) (int avaiable, const char* apn);
+static void (*vendor_agpsril_init)( AGpsRilCallbacks* callbacks );
+static void (*vendor_agpsril_set_ref_location)(const AGpsRefLocation_vendor *agps_reflocation, size_t sz_struct);
+static void (*vendor_agpsril_set_set_id) (AGpsSetIDType type, const char* setid);
+static void (*vendor_agpsril_ni_message) (uint8_t *msg, size_t len);
+static void (*vendor_agpsril_update_network_state) (int connected, int type, int roaming, const char* extra_info);
+static void (*vendor_agpsril_update_network_availability) (int avaiable, const char* apn);
 
 /* AGPS-RIL callback-methods */
-void (*vendor_agpsril_cb_request_setid)(uint32_t flags);
-void (*vendor_agpsril_cb_request_refloc)(uint32_t flags);
-pthread_t (* vendor_agpsril_cb_create_thread_cb)(const char* name, void (*start)(void *), void* arg);
+static void (*vendor_agpsril_cb_request_setid)(uint32_t flags);
+static void (*vendor_agpsril_cb_request_refloc)(uint32_t flags);
+static pthread_t (* vendor_agpsril_cb_create_thread_cb)(const char* name, void (*start)(void *), void* arg);
 
-AGpsRilCallbacks *orgAGpsRilCallbacks = NULL;
-GpsCallbacks *orgGpsCallbacks = NULL;
+static AGpsRilCallbacks *orgAGpsRilCallbacks = NULL;
+static AGpsRilCallbacks shimmed_callbacks;
+static GpsCallbacks *orgGpsCallbacks = NULL;
 static GpsSvStatus gpsSvStatus_info;
+
 
 static void log_gpsStatus_vendor(char* func, GpsStatus* status) {
     ALOGD("%s: size=%3d status=%3d", func, status->size, status->status);
@@ -283,8 +287,6 @@ static pthread_t shim_agpsril_cb_create_thread_cb(const char* name, void (*start
 
 static void shim_agpsril_init(AGpsRilCallbacks* callbacks) {
     ALOGD("%s: called", __func__);
-
-    AGpsRilCallbacks shimmed_callbacks;
 
     orgAGpsRilCallbacks = callbacks;
     vendor_agpsril_cb_request_setid = orgAGpsRilCallbacks->request_setid;
@@ -478,7 +480,7 @@ static int shim_gps_set_position_mode(GpsPositionMode mode, GpsPositionRecurrenc
 	return result;
 }
 
-const void* shim_gps_get_extension(const char* name) {
+static void* shim_gps_get_extension(const char* name) {
 	ALOGD("%s(%s)", __func__, name);
 	if (strcmp(name, AGPS_RIL_INTERFACE) == 0) {
 		if (aGpsInterface == NULL) {
@@ -542,10 +544,9 @@ const void* shim_gps_get_extension(const char* name) {
 	return vendor_gps_get_extension(name);
 }
 
-int shim_gps_init (GpsCallbacks* gpsCallbacks) {
+static int shim_gps_init (GpsCallbacks* gpsCallbacks) {
 	ALOGD("%s: shimming GpsCallbacks", __func__);
         orgGpsCallbacks = gpsCallbacks;
-        GpsCallbacks_vendor vendor_gpsCallbacks;
 	vendor_gpsCallbacks.size = sizeof(GpsCallbacks_vendor);
 	vendor_gpsCallbacks.location_cb = shim_location_cb;
 	vendor_gpsCallbacks.status_cb = shim_status_cb;
@@ -560,7 +561,7 @@ int shim_gps_init (GpsCallbacks* gpsCallbacks) {
 	return vendor_gps_init(&vendor_gpsCallbacks);
 }
 
-const GpsInterface* shim_get_gps_interface(struct gps_device_t* dev) {
+static GpsInterface* shim_get_gps_interface(struct gps_device_t* dev) {
 	ALOGD("%s: shimming GpsInterface", __func__);
 	GpsInterface *halInterface = vendor_get_gps_interface(dev);
 
