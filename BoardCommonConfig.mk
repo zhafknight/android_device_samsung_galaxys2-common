@@ -63,6 +63,9 @@ TARGET_NEEDS_PLATFORM_TEXT_RELOCATIONS := true
 # Manifest
 DEVICE_MANIFEST_FILE := $(DEVICE_PATH)/manifest.xml
 
+# Properties
+TARGET_VENDOR_PROP += $(COMMON_PATH)/vendor.prop
+
 # Bionic
 TARGET_LD_SHIM_LIBS := \
     /system/vendor/lib/libsec-ril.so|libcutils_shim.so
