@@ -50,6 +50,9 @@
 
 # Firmwares
 /system/vendor/firmware/mfc_fw.bin                               u:object_r:firmware_mfc:s0
+/system/vendor/firmware/bcm4330B1.hcd                            u:object_r:firmware_bluetooth:s0
+/system/vendor/firmware/bcm4330B1_murata.hcd                     u:object_r:firmware_bluetooth:s0
+/system/vendor/firmware/bcm4330B1_semcosh.hcd                    u:object_r:firmware_bluetooth:s0
 
 # Display
 /sys/devices/platform/samsung-pd.2/mdnie/mdnie(/.*)?             u:object_r:sysfs_display:s0
