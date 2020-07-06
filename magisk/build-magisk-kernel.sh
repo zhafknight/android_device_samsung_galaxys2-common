@@ -54,12 +54,6 @@ case $USERINPUT in
 	echo "Rebuilding kernel with Magisk modified ramdisk..."
 	croot
 
-	BUILDSPECFILE=buildspec.mk
-	if test -f "$BUILDSPECFILE"; then
-	        cp buildspec.mk buildspec.mk.org
-	fi
-
-	echo "WITH_MAGISKRAMDISK:=true" >>buildspec.mk
 	mka bootimage
 	echo "Rebuilding kernel with Magisk modified ramdisk... Done!"
 
@@ -73,12 +67,6 @@ case $USERINPUT in
 	echo "Pushing flashable /sdcard1/boot_magisk.img... Done!"
 	echo ""
 	croot
-	rm buildspec.mk
-
-	BUILDSPECFILE=buildspec.mk.org
-	if test -f "$BUILDSPECFILE"; then
-		mv buildspec.mk.org buildspec.mk
-	fi
 
 	echo "*** You can now reboot your Magisk-enabled device. ***"
  ;;
