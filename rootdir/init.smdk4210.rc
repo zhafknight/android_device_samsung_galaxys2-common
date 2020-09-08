@@ -292,6 +292,9 @@ on post-fs-data
     chown radio system /sys/devices/virtual/accelerometer/accelerometer/acc_file
     chown radio system /sys/devices/virtual/sec/gsensorcal/calibration
 
+# Permission CPU temperature
+    chown radio system /sys/devices/platform/s5p-tmu/temperature
+
 # Permissions for PegasusQ
     chown system system /sys/devices/system/cpu/cpufreq/pegasusq
     chown system system /sys/devices/system/cpu/cpufreq/pegasusq/boost_freq
