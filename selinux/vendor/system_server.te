@@ -18,6 +18,7 @@ allow system_server debugfs:file { getattr open read };
 allow system_server init:binder call;
 allow system_server proc:file { getattr open read };
 allow system_server unlabeled:file unlink;
+allow system_server privapp_data_file:file rename;
 
 # Only allowed because of TARGET_NEEDS_PLATFORM_TEXT_RELOCATIONS
 allow system_server vendor_file:file execmod;
