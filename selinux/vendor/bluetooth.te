@@ -4,3 +4,4 @@ allow bluetooth method_trace_data_file:file { read unlink };
 allow bluetooth firmware_bluetooth:dir { open read search };
 allow bluetooth firmware_bluetooth:file { open read };
 allow bluetooth wifi_data_file:file { open read };
+allow bluetooth method_trace_data_file:file execute;

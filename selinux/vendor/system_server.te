@@ -10,7 +10,6 @@ allow system_server sysfs_display:file { getattr open read write };
 allow system_server ion_device:chr_file write;
 allow system_server rild:unix_stream_socket connectto;
 allow system_server sensors_device:chr_file { ioctl open read write };
-allow system_server device:chr_file { ioctl };
 allow system_server sysfs_bln:file write;
 allow system_server sysfs_sec_touchkey:file { open read write };
 allow system_server sdcardfs:file { getattr open read write };
@@ -19,6 +18,8 @@ allow system_server init:binder call;
 allow system_server proc:file { getattr open read };
 allow system_server unlabeled:file unlink;
 allow system_server privapp_data_file:file rename;
+allow system_server dalvikcache_data_file:file execute;
+allow system_server device:chr_file { ioctl open read write };
 
 # Only allowed because of TARGET_NEEDS_PLATFORM_TEXT_RELOCATIONS
 allow system_server vendor_file:file execmod;
