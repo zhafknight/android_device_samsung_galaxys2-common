@@ -57,6 +57,9 @@ BOARD_KERNEL_IMAGE_NAME := zImage
 NEED_KERNEL_MODULE_SYSTEM := true
 TARGET_NEEDS_PLATFORM_TEXT_RELOCATIONS := true
 
+# Manifest
+DEVICE_MANIFEST_FILE := $(DEVICE_PATH)/manifest.xml
+
 # Bionic
 TARGET_LD_SHIM_LIBS := \
     /system/vendor/lib/libsec-ril.so|libsamsung_symbols.so

@@ -158,11 +158,6 @@ PRODUCT_PROPERTY_OVERRIDES += \
     media.stagefright.legacyencoder=true \
     media.stagefright.less-secure=true
 
-
-# HIDL manifest
-PRODUCT_COPY_FILES += \
-    device/samsung/galaxys2-common/manifest.xml:system/vendor/manifest.xml
-
 # MFC API
 PRODUCT_PACKAGES += \
     libsecmfcapi
