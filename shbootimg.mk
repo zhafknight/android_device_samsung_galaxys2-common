@@ -21,7 +21,6 @@ $(INSTALLED_BOOTIMAGE_TARGET): $(INSTALLED_KERNEL_TARGET)
 	$(ACP) -fp $< $@
 
 # Default Recoveryimage build script
-$(INSTALLED_RECOVERYIMAGE_TARGET): $(MKBOOTIMG) $(recovery_ramdisk) $(recovery_kernel) \
-	$(RECOVERYIMAGE_EXTRA_DEPS)
+$(INSTALLED_RECOVERYIMAGE_TARGET): $(recoveryimage-deps)
 	@echo ----- Making recovery image ------
-	$(call build-recoveryimage-target, $@)
+	$(call build-recoveryimage-target, $@, $(recovery_kernel))
