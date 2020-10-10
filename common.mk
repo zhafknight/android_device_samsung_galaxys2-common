@@ -84,6 +84,11 @@ PRODUCT_PACKAGES := \
 PRODUCT_PACKAGES += \
     android.hardware.usb@1.0-service.basic
 
+# Keymaster
+PRODUCT_PACKAGES += \
+    android.hardware.keymaster@3.0-impl \
+    android.hardware.keymaster@3.0-service
+
 # Legacy RIL
 PRODUCT_PACKAGES += \
     libsamsung_symbols \
