@@ -57,7 +57,7 @@
             <instance>default</instance>
         </interface>
         <interface>
-            <name>IDisplayMode</name>
+            <name>IDisplayModes</name>
             <instance>default</instance>
         </interface>
         <interface>
@@ -66,6 +66,10 @@
         </interface>
         <interface>
             <name>IAdaptiveBacklight</name>
+            <instance>default</instance>
+        </interface>
+        <interface>
+            <name>IReadingEnhancement</name>
             <instance>default</instance>
         </interface>
     </hal>
