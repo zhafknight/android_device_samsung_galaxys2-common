@@ -17,6 +17,9 @@
 
 DEVICE_PATH := device/samsung/galaxys2-common
 
+# HIDL
+PRODUCT_ENFORCE_VINTF_MANIFEST_OVERRIDE := true
+
 # Allow duplicate rules to override them
 BUILD_BROKEN_DUP_RULES := true
 
