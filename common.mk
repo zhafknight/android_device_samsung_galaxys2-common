@@ -15,6 +15,8 @@
 #
 COMMON_PATH := device/samsung/galaxys2-common
 
+PRODUCT_BUILD_RECOVERY_IMAGE := true
+
 DEVICE_PACKAGE_OVERLAYS := $(COMMON_PATH)/overlay \
     $(COMMON_PATH)/overlay-lineage
 
