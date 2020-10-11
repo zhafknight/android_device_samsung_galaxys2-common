@@ -374,7 +374,7 @@ on boot
     write /proc/sys/vm/swappiness 100
 
 # For RIL
-service cpboot-daemon /sbin/cbd -d -p 8
+service cpboot-daemon /vendor/bin/cbd -d -p 8
     class main
     user root
     group radio cache inet misc audio sdcard_rw log sdcard_r

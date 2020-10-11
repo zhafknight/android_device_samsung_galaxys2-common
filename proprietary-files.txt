@@ -1,4 +1,4 @@
-sbin/cbd
+system/vendor/bin/cbd
 system/vendor/bin/bcm4330B1.hcd
 system/vendor/bin/bcm4330B1_murata.hcd
 system/vendor/bin/bcm4330B1_semcosh.hcd
