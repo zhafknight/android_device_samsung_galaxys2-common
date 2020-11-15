@@ -151,6 +151,10 @@ PRODUCT_PACKAGES += \
     libsecion \
     libC
 
+# Gatekeeper
+PRODUCT_PACKAGES += \
+    android.hardware.gatekeeper@1.0-service.software
+
 #Vibrator
 PRODUCT_PACKAGES += \
     android.hardware.vibrator@1.0-impl
