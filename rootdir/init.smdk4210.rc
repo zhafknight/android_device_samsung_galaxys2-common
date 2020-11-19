@@ -380,7 +380,7 @@ service cpboot-daemon /vendor/bin/cbd -d -p 8
     group radio cache inet misc audio sdcard_rw log sdcard_r
     seclabel u:r:cpboot-daemon:s0
 
-service charger /charger
+service charger /system/bin/charger
     class charger
     critical
     seclabel u:r:charger:s0
