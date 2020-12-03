@@ -13,3 +13,5 @@ allow hal_gnss_default port:tcp_socket name_connect;
 allow hal_gnss_default self:capability net_raw;
 allow hal_gnss_default self:tcp_socket { connect create getopt setopt read write shutdown };
 # allow hal_gnss_default system_suspend:binder call;
+allow hal_gnss_default system_data_root_file:dir { add_name write };
+allow hal_gnss_default system_data_root_file:file { create getattr open read write };

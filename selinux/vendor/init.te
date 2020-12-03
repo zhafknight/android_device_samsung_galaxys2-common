@@ -26,4 +26,8 @@ allow init sysfs_sec_touchkey:file { setattr open write };
 allow init sysfs_mmc:file { open write setattr};
 allow init sysfs:file { open read write };
 allow init { domain -lmkd -crash_dump }:process noatsecure;
+allow init system_server:binder { call transfer };
+allow init self:netlink_socket { bind create getattr read setopt write };
+allow init hal_wifi_hwservice:hwservice_manager { add find };
+allow init hidl_base_hwservice:hwservice_manager add;
 domain_trans(init, rootfs, cpboot-daemon)
