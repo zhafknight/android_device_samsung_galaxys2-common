@@ -45,8 +45,9 @@ static RIL_CellInfo_v12 cellInfoWCDMA;
 static RIL_CellInfo_v12 cellInfoGSM;
 static RIL_CellInfo_v12 cellInfoList[2];
 
+static RIL_Dial dial;
+
 static void onRequestDial(int request, void *data, RIL_Token t) {
-	RIL_Dial dial;
 	RIL_UUS_Info uusInfo;
 
 	dial.address = ((RIL_Dial *) data)->address;
