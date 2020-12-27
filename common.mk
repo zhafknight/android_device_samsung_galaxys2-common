@@ -87,6 +87,7 @@ PRODUCT_PACKAGES += \
 
 # Legacy RIL
 PRODUCT_PACKAGES += \
+    libsecril-client \
     libsamsung_symbols \
     libsecril-shim \
     libcutils_shim
