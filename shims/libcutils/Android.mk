@@ -16,7 +16,7 @@
 LOCAL_PATH := $(call my-dir)
 include $(CLEAR_VARS)
 
-LOCAL_SRC_FILES := strdup16to8.cpp strdup8to16.cpp samsung_ril.cpp
+LOCAL_SRC_FILES := samsung_ril.cpp
 LOCAL_MODULE := libcutils_shim
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
 LOCAL_SHARED_LIBRARIES := libcutils libbinder
