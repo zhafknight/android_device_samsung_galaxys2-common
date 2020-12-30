@@ -92,6 +92,10 @@ PRODUCT_PACKAGES += \
     libsecril-shim \
     libcutils_shim
 
+# VNDK
+PRODUCT_COPY_FILES += \
+    prebuilts/vndk/v29/arm/arch-arm-armv7-a-neon/shared/vndk-sp/libcutils.so:$(TARGET_COPY_OUT_VENDOR)/lib/libcutils-v29.so
+
 # Legacy GPS
 PRODUCT_PACKAGES += \
     android.hardware.gnss@1.0-impl \
