@@ -114,6 +114,10 @@ PRODUCT_PACKAGES += \
 PRODUCT_PROPERTY_OVERRIDES += \
     ro.config.small_battery=true
 
+# Charger
+PRODUCT_PROPERTY_OVERRIDES += \
+    ro.charger.enable_suspend=true
+
 # Trust HAL
 PRODUCT_PACKAGES += \
     vendor.lineage.trust@1.0-service
