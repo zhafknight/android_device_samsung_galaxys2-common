@@ -1,2 +1,2 @@
-allow audioserver rild:unix_stream_socket connectto;
+allow audioserver rild:unix_stream_socket { connectto read write };
 allow audioserver vendor_file:file execmod;
