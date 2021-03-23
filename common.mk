@@ -88,6 +88,7 @@ PRODUCT_PACKAGES += \
 # Legacy RIL
 PRODUCT_PACKAGES += \
     libsamsung-ril \
+    libaudio-ril-interface \
     libsecril-client \
     libsamsung_symbols \
     libsecril-shim \
