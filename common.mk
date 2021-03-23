@@ -87,6 +87,7 @@ PRODUCT_PACKAGES += \
 
 # Legacy RIL
 PRODUCT_PACKAGES += \
+    libsamsung-ril \
     libsecril-client \
     libsamsung_symbols \
     libsecril-shim \
@@ -128,9 +129,8 @@ PRODUCT_PROPERTY_OVERRIDES += \
 
 # Audio Packages
 PRODUCT_PACKAGES += \
-    android.hardware.audio@6.0-impl \
-    android.hardware.audio.effect@6.0-impl \
-    android.hardware.audio.effect@2.0-service \
+    android.hardware.audio@5.0-impl \
+    android.hardware.audio.effect@5.0-impl \
     android.hardware.audio.service \
     audio.primary.exynos4 \
     audio.a2dp.default \

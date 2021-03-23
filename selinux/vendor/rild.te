@@ -15,3 +15,9 @@ allow rild shell_exec:file { getattr execute_no_trans execute open read };
 allow rild system_file:file execmod;
 allow rild vendor_file:file execmod;
 allow rild system_lib_file:file execmod;
+
+# libsamsung-ril
+allow rild block_device:dir search;
+allow rild efs_block_device:blk_file open;
+allow rild sysfs_radio:file write;
+

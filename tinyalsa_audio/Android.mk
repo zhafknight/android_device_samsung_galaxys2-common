@@ -15,7 +15,7 @@
 
 LOCAL_PATH := $(call my-dir)
 
-ifeq ($(strip $(BOARD_USE_TINYALSA_AUDIO)),true)
+ifeq ($(strip $(BOARD_USE_TINYALSA_AUDIOX)),true)
 
 include $(CLEAR_VARS)
 

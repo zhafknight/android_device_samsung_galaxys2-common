@@ -1,3 +1,4 @@
+
 #include <android/api-level.h>
 #include "secril-shim.h"
 #include "secril-sap.h"
@@ -389,8 +390,8 @@ static void onRequestShim(int request, void *data, size_t datalen, RIL_Token t)
 			}
 			return;
 		/* The following requests were introduced post-4.3. */
-		case RIL_REQUEST_SIM_TRANSMIT_APDU_BASIC:
-		case RIL_REQUEST_SIM_OPEN_CHANNEL: /* !!! */
+/*		case RIL_REQUEST_SIM_TRANSMIT_APDU_BASIC:
+		case RIL_REQUEST_SIM_OPEN_CHANNEL: 
 		case RIL_REQUEST_SIM_CLOSE_CHANNEL:
 		case RIL_REQUEST_SIM_TRANSMIT_APDU_CHANNEL:
 		case RIL_REQUEST_NV_READ_ITEM:
@@ -404,7 +405,7 @@ static void onRequestShim(int request, void *data, size_t datalen, RIL_Token t)
 		case RIL_REQUEST_GET_DC_RT_INFO:
 		case RIL_REQUEST_SET_DC_RT_INFO_RATE:
 		case RIL_REQUEST_SET_DATA_PROFILE:
-		case RIL_REQUEST_SHUTDOWN: /* TODO: Is there something we can do for RIL_REQUEST_SHUTDOWN ? */
+		case RIL_REQUEST_SHUTDOWN: 
 		case RIL_REQUEST_SET_RADIO_CAPABILITY:
 		case RIL_REQUEST_START_LCE:
 		case RIL_REQUEST_STOP_LCE:
@@ -413,6 +414,7 @@ static void onRequestShim(int request, void *data, size_t datalen, RIL_Token t)
 				onRequestUnsupportedRequest(request, t);
 			}
 			return;
+*/
 	}
 
 	origRilFunctions->onRequest(request, data, datalen, t);
@@ -547,6 +549,7 @@ static void fixupSignalStrength(void *response) {
 }
 
 static void onRequestCompleteShim(RIL_Token t, RIL_Errno e, void *response, size_t responselen) {
+	RLOGD("%s:\t\t\t<<< REQUEST-COMPLETE...\n", __FUNCTION__);
 	int request;
 	RequestInfo *pRI;
 
@@ -625,14 +628,17 @@ null_token_exit:
 
 static void onUnsolicitedResponseShim(int unsolResponse, const void *data, size_t datalen)
 {
+RLOGD("%s:\t\t\t--- %s: response:%p responselen:%d\n", __FUNCTION__, requestToString(unsolResponse), data, datalen);
 	switch (unsolResponse) {
 		case RIL_UNSOL_DATA_CALL_LIST_CHANGED:
+
 			/* According to the Samsung RIL, the addresses are the gateways?
 			 * This fixes mobile data. */
 			if (data != NULL && datalen != 0 && (datalen % sizeof(RIL_Data_Call_Response_v6) == 0))
 				fixupDataCallList((void*) data, datalen);
 			break;
 		case RIL_UNSOL_SIGNAL_STRENGTH:
+RLOGD("%s:\t\t\t--- %s: FIXUP? RIL_SignalStrength_v5:%d vs datalen:%d\n", __FUNCTION__, requestToString(unsolResponse), sizeof(RIL_SignalStrength_v5), datalen);
 			/* The Samsung RIL reports the signal strength in a strange way... */
 			if (data != NULL && datalen >= sizeof(RIL_SignalStrength_v5))
 				fixupSignalStrength((void*) data);
