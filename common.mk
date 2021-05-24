@@ -59,7 +59,7 @@ PRODUCT_COPY_FILES += \
 PRODUCT_PACKAGES := \
     com.android.future.usb.accessory \
     SamsungServiceMode \
-    Snap
+    Camera2
 
 # Legacy RIL
 PRODUCT_PACKAGES += \
