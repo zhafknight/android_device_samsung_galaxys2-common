@@ -13,7 +13,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-
 #define GOVERNOR_PATH "/sys/devices/system/cpu/cpu0/cpufreq/scaling_governor"
 
 #define GOV_PERFORMANCE      "performance"
@@ -30,14 +29,21 @@ enum {
     PROFILE_MAX
 };
 
+typedef struct hotplug_freq {
+    int down;
+    int up;
+} hotplug_freq_values;
+
+typedef struct hotplug_rq {
+    int down;
+    int up;
+} hotplug_rq_values;
+
 typedef struct governor_settings {
     // freq values for core up/down
-    int hotplug_freq_1_1;
-    int hotplug_freq_2_0;
+    struct hotplug_freq hotplug_freqs[2];
     // rq sizes for up/down
-    int hotplug_rq_1_1;
-    int hotplug_rq_2_0;
-    // max/min freqs (-1 for default)
+    struct hotplug_rq hotplug_rqs[2];
     int max_freq;
     int min_freq;
     // load at which to start scaling up
@@ -68,10 +74,10 @@ typedef struct governor_settings {
 
 static power_profile profiles[PROFILE_MAX] = {
     [PROFILE_POWER_SAVE] = {
-        .hotplug_freq_1_1 = 400000,
-        .hotplug_freq_2_0 = 300000,
-        .hotplug_rq_1_1 = 300,
-        .hotplug_rq_2_0 = 250,
+	.hotplug_freqs[0] = {	     -1,   400000 },
+	.hotplug_freqs[1] = {	 300000,       -1 },
+	.hotplug_rqs[0] = {	  -1,	  300 },
+	.hotplug_rqs[1] = {	 250,	   -1 },
         .max_freq = 600000,
         .min_freq = -1,
         .up_threshold = 80,
@@ -91,15 +97,15 @@ static power_profile profiles[PROFILE_MAX] = {
         .launch_boost_time = 0,
     },
     [PROFILE_BALANCED] = {
-        .hotplug_freq_1_1 = 400000,
-        .hotplug_freq_2_0 = 300000,
-        .hotplug_rq_1_1 = 300,
-        .hotplug_rq_2_0 = 250,
-        .min_freq = 100000,
+	.hotplug_freqs[0] = {	     -1,   500000 },
+	.hotplug_freqs[1] = {	 400000,       -1 },
+	.hotplug_rqs[0] = {	  -1,	  300 },
+	.hotplug_rqs[1] = {	 250,	   -1 },
+        .min_freq = -1,
         .max_freq = -1,
         .up_threshold = 80,
         .up_threshold_at_min_freq = 50,
-        .freq_for_responsiveness = 200000,
+        .freq_for_responsiveness = 500000,
         .freq_step = 18,
         .down_differential = 5,
         .min_cpu_lock = 0,
@@ -108,16 +114,16 @@ static power_profile profiles[PROFILE_MAX] = {
         .cpu_down_rate = 1,
         .sampling_rate = 200000,
         .io_is_busy = 1,
-        .boost_freq = 1000000,
-        .boost_mincpus = 0,
-        .interaction_boost_time = 120 * (MS_TO_NS),
+        .boost_freq = 600000,
+        .boost_mincpus = 2,
+        .interaction_boost_time = 500 * (MS_TO_NS),
         .launch_boost_time = 2000 * (MS_TO_NS),
     },
     [PROFILE_PERFORMANCE] = {
-        .hotplug_freq_1_1 = 400000,
-        .hotplug_freq_2_0 = 300000,
-        .hotplug_rq_1_1 = 300,
-        .hotplug_rq_2_0 = 250,
+	.hotplug_freqs[0] = {	     -1,   400000 },
+	.hotplug_freqs[1] = {	 300000,       -1 },
+	.hotplug_rqs[0] = {	  -1,	  300 },
+	.hotplug_rqs[1] = {	 250,	   -1 },
         .min_freq = 1200000,
         .max_freq = -1,
         .freq_step = 37,
@@ -142,10 +148,10 @@ static power_profile profiles[PROFILE_MAX] = {
 // boosting as it (should) only occur while the screen is on
 static power_profile profiles_low_power[PROFILE_MAX] = {
     [PROFILE_POWER_SAVE] = {
-        .hotplug_freq_1_1 = 400000,
-        .hotplug_freq_2_0 = 300000,
-        .hotplug_rq_1_1 = 300,
-        .hotplug_rq_2_0 = 250,
+	.hotplug_freqs[0] = {	     -1,   400000 },
+	.hotplug_freqs[1] = {	 300000,       -1 },
+	.hotplug_rqs[0] = {	  -1,	  300 },
+	.hotplug_rqs[1] = {	 250,	   -1 },
         .max_freq = 400000,
         .min_freq = -1,
         .up_threshold = 95,
@@ -165,15 +171,15 @@ static power_profile profiles_low_power[PROFILE_MAX] = {
         .launch_boost_time = 0,
     },
     [PROFILE_BALANCED] = {
-        .hotplug_freq_1_1 = 400000,
-        .hotplug_freq_2_0 = 300000,
-        .hotplug_rq_1_1 = 300,
-        .hotplug_rq_2_0 = 250,
-        .min_freq = 100000,
+	.hotplug_freqs[0] = {	     -1,   500000 },
+	.hotplug_freqs[1] = {	 400000,       -1 },
+	.hotplug_rqs[0] = {	  -1,	  300 },
+	.hotplug_rqs[1] = {	 250,	   -1 },
+        .min_freq = -1,
         .max_freq = -1,
-        .up_threshold = 95,
+        .up_threshold = 80,
         .up_threshold_at_min_freq = 50,
-        .freq_for_responsiveness = 200000,
+        .freq_for_responsiveness = 500000,
         .freq_step = 18,
         .down_differential = 5,
         .min_cpu_lock = 0,
@@ -182,16 +188,16 @@ static power_profile profiles_low_power[PROFILE_MAX] = {
         .cpu_down_rate = 1,
         .sampling_rate = 200000,
         .io_is_busy = 1,
-        .boost_freq = 1000000,
-        .boost_mincpus = 0,
-        .interaction_boost_time = 0,
-        .launch_boost_time = 0,
+        .boost_freq = 600000,
+        .boost_mincpus = 2,
+        .interaction_boost_time = 500 * (MS_TO_NS),
+        .launch_boost_time = 2000 * (MS_TO_NS),
     },
     [PROFILE_PERFORMANCE] = {
-        .hotplug_freq_1_1 = 400000,
-        .hotplug_freq_2_0 = 300000,
-        .hotplug_rq_1_1 = 300,
-        .hotplug_rq_2_0 = 250,
+	.hotplug_freqs[0] = {	     -1,   400000 },
+	.hotplug_freqs[1] = {	 300000,       -1 },
+	.hotplug_rqs[0] = {	  -1,	  300 },
+	.hotplug_rqs[1] = {	 250,	   -1 },
         .min_freq = 1200000,
         .max_freq = -1,
         .freq_step = 37,
