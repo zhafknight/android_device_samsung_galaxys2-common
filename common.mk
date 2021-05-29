@@ -172,7 +172,7 @@ PRODUCT_PACKAGES += \
 #Camera
 PRODUCT_PACKAGES += \
     android.hardware.camera.provider@2.4-impl-legacy \
-    android.hardware.camera.provider@2.4-service \
+    android.hardware.camera.provider@2.4-service-lazy \
     camera.device@1.0-impl-legacy \
     camera.smdk4210 \
     Snap \
@@ -182,7 +182,8 @@ PRODUCT_PACKAGES += \
 PRODUCT_PROPERTY_OVERRIDES += \
     debug.stagefright.ccodec=0 \
     media.stagefright.legacyencoder=true \
-    media.stagefright.less-secure=true
+    media.stagefright.less-secure=true \
+    ro.camera.enableLazyHal=true
 
 # MFC API
 PRODUCT_PACKAGES += \
@@ -195,7 +196,7 @@ PRODUCT_PROPERTY_OVERRIDES += \
 #DRM
 PRODUCT_PACKAGES += \
     android.hardware.drm@1.0-impl \
-    android.hardware.drm@1.0-service
+    android.hardware.drm@1.0-service-lazy
 
 # OMX
 PRODUCT_PACKAGES += \
