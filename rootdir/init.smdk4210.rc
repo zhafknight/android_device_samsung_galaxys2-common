@@ -338,6 +338,12 @@ on post-fs-data
 # Persistent logcat
     mkdir /data/.logs 0775 system log
 
+on early-init
+    write /proc/sys/kernel/magisk_workaround 1
+
+on property:sys.boot_completed=1
+    write /proc/sys/kernel/magisk_workaround 1
+
 on boot
     mount debugfs /sys/kernel/debug /sys/kernel/debug
     setprop wifi.interface wlan0
