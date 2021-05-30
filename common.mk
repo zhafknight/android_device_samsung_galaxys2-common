@@ -17,6 +17,10 @@ COMMON_PATH := device/samsung/galaxys2-common
 
 PRODUCT_BUILD_RECOVERY_IMAGE := true
 
+# Enable DM file pre-opting to reduce first boot time
+PRODUCT_DEX_PREOPT_GENERATE_DM_FILES := true
+PRODUCT_DEX_PREOPT_DEFAULT_COMPILER_FILTER := verify
+
 DONT_UNCOMPRESS_PRIV_APPS_DEXS := true
 
 DEVICE_PACKAGE_OVERLAYS := $(COMMON_PATH)/overlay \
