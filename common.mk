@@ -28,7 +28,8 @@ DEVICE_PACKAGE_OVERLAYS := $(COMMON_PATH)/overlay
 # RRO (Runtime Resource Overlay)
 PRODUCT_ENFORCE_RRO_TARGETS += *
 PRODUCT_ENFORCE_RRO_EXCLUDED_OVERLAYS  += * \
-    $(COMMON_PATH)/overlay-lineage/lineage-sdk
+    $(COMMON_PATH)/overlay-lineage/lineage-sdk \
+    $(COMMON_PATH)/overlay/hardware
 
 # Rootdir
 PRODUCT_COPY_FILES := \
