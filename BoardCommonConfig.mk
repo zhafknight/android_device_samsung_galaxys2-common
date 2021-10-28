@@ -23,6 +23,9 @@ PRODUCT_ENFORCE_VINTF_MANIFEST_OVERRIDE := true
 # Allow duplicate rules to override them
 BUILD_BROKEN_DUP_RULES := true
 
+# PRODUCT_COPY_FILES directives.
+BUILD_BROKEN_ELF_PREBUILT_PRODUCT_COPY_FILES := true
+
 # This variable is set first, so it can be overridden
 # by BoardConfigVendor.mk
 BOARD_USES_GENERIC_AUDIO := false
