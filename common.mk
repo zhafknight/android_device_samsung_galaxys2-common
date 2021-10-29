@@ -188,14 +188,14 @@ PRODUCT_PACKAGES += \
     android.hardware.vibrator@1.0-service
 
 #Camera
-PRODUCT_PACKAGES += \
-    android.hardware.camera.provider@2.4-impl-legacy \
-    android.hardware.camera.provider@2.4-service-lazy \
-    camera.device@1.0-impl-legacy \
-    camera.smdk4210 \
-    Snap \
-    libstagefright-shim \
-    mediaserver.rc
+#PRODUCT_PACKAGES += \
+#    android.hardware.camera.provider@2.4-impl-legacy \
+#    android.hardware.camera.provider@2.4-service-lazy \
+#    camera.device@1.0-impl-legacy \
+#    camera.smdk4210 \
+#    Snap \
+#    libstagefright-shim \
+#    mediaserver.rc
 
 PRODUCT_PROPERTY_OVERRIDES += \
     debug.stagefright.ccodec=0 \
