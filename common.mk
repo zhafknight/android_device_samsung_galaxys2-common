@@ -121,9 +121,10 @@ PRODUCT_PACKAGES += \
     android.hardware.gnss@1.0-service.exynos4 \
     gps.smdk4210
 
-# SamsungPowerHAL
+# Power HAL
 PRODUCT_PACKAGES += \
-    android.hardware.power@1.0-service.exynos4210
+    android.hardware.power@1.0-impl \
+    android.hardware.power@1.0-service
 
 # Battery
 PRODUCT_PACKAGES += \
