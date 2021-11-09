@@ -31,13 +31,15 @@ PRODUCT_ENFORCE_RRO_EXCLUDED_OVERLAYS  += * \
     $(COMMON_PATH)/overlay-lineage/lineage-sdk \
     $(COMMON_PATH)/overlay/hardware
 
-# Rootdir
+# Init
 PRODUCT_COPY_FILES := \
-    $(COMMON_PATH)/rootdir/fstab.smdk4210:root/fstab.smdk4210 \
-    $(COMMON_PATH)/rootdir/fstab.smdk4210:$(TARGET_COPY_OUT_RAMDISK)/fstab.smdk4210 \
     $(COMMON_PATH)/rootdir/init.smdk4210.usb.rc:root/init.smdk4210.usb.rc \
-    $(COMMON_PATH)/rootdir/init.smdk4210.rc:root/init.smdk4210.rc \
-    $(COMMON_PATH)/rootdir/ueventd.smdk4210.rc:root/ueventd.smdk4210.rc
+    $(COMMON_PATH)/rootdir/init.smdk4210.rc:root/init.smdk4210.rc
+
+# File system table
+PRODUCT_COPY_FILES += \
+    $(COMMON_PATH)/rootdir/fstab.smdk4210:root/fstab.smdk4210 \
+    $(COMMON_PATH)/rootdir/fstab.smdk4210:$(TARGET_COPY_OUT_RAMDISK)/fstab.smdk4210
 
 # Component overrides
 PRODUCT_COPY_FILES += \
@@ -94,6 +96,10 @@ PRODUCT_COPY_FILES += \
 PRODUCT_PACKAGES := \
     com.android.future.usb.accessory \
     Snap
+
+# Permissions uvents
+PRODUCT_PACKAGES += \
+    ueventd.smdk4210.rc
 
 # USB
 PRODUCT_PACKAGES += \
