@@ -16,8 +16,13 @@
 
 LOCAL_PATH := $(call my-dir)
 
+# For Galaxy S2 the ramdisk.img is embedded uncompressed in zImage as ramdisk.cpio.
+UNCOMPRESSED_RAMDISK := $(PRODUCT_OUT)/ramdisk.cpio
+$(UNCOMPRESSED_RAMDISK): $(INSTALLED_RAMDISK_TARGET)
+	$(hide) $(MKBOOTFS) -d $(TARGET_OUT) $(TARGET_RAMDISK_OUT) > $@
+
 # For Galaxy S2 the boot.img is the zImage directly and pushed to /dev/block/mmcblk0p5
-$(INSTALLED_BOOTIMAGE_TARGET): $(INSTALLED_KERNEL_TARGET)
+$(INSTALLED_BOOTIMAGE_TARGET): $(INSTALLED_KERNEL_TARGET) | $(UNCOMPRESSED_RAMDISK)
 	$(ACP) -fp $< $@
 
 # Default Recoveryimage build script
