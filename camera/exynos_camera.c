@@ -2161,6 +2161,10 @@ int exynos_camera_preview(struct exynos_camera *exynos_camera)
 
 	exynos_camera->preview_window->dequeue_buffer(exynos_camera->preview_window,
 		&buffer, &stride);
+
+	if (!exynos_camera->preview_enabled)
+		goto error;
+
 	exynos_camera->gralloc->lock(exynos_camera->gralloc, *buffer, GRALLOC_USAGE_SW_WRITE_OFTEN,
 		0, 0, width, height, &window_data);
 
