@@ -82,6 +82,7 @@ TARGET_PROCESS_SDK_VERSION_OVERRIDE := \
     /system/lib/libfactoryutil.so=22 \
     /system/vendor/lib/libakm.so=22 \
     /system/vendor/lib/libsecril-client.so=22 \
+    /system/vendor/lib/libsecril-cl-gps.so=22 \
     /system/vendor/lib/hw/gps.exynos4.vendor.so=22
 
 # Include an expanded selection of fonts
