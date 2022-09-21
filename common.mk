@@ -369,6 +369,10 @@ PRODUCT_COPY_FILES += \
     frameworks/native/data/etc/handheld_core_hardware.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/handheld_core_hardware.xml \
     frameworks/native/data/etc/android.hardware.bluetooth_le.xml:$(TARGET_COPY_OUT_VENDOR)/etc/permissions/android.hardware.bluetooth_le.xml
 
+PRODUCT_COPY_FILES += \
+    $(LOCAL_PATH)/configs/permissions/privapp-permissions-cellbroadcastappplatform.xml:$(TARGET_COPY_OUT_SYSTEM_EXT)/etc/permissions/privapp-permissions-cellbroadcastappplatform.xml \
+    $(LOCAL_PATH)/configs/permissions/privapp-permissions-cellbroadcastservice.xml:$(TARGET_COPY_OUT_SYSTEM)/etc/permissions/privapp-permissions-cellbroadcastservice.xml
+
 PRODUCT_TAGS += dalvik.gc.type-precise
 
 # Keylayouts
