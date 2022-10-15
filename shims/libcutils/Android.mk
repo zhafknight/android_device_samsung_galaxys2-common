@@ -19,7 +19,7 @@ include $(CLEAR_VARS)
 LOCAL_SRC_FILES := samsung_ril.cpp
 LOCAL_MODULE := libcutils_shim
 LOCAL_MODULE_CLASS := SHARED_LIBRARIES
-LOCAL_SHARED_LIBRARIES := libcutils libbinder
+LOCAL_SHARED_LIBRARIES := libcutils libbinder libprocessgroup
 LOCAL_VENDOR_MODULE := true
 
 include $(BUILD_SHARED_LIBRARY)

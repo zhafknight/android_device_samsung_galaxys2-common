@@ -14,8 +14,14 @@
  * limitations under the License.
  */
 
+#include <processgroup/sched_policy.h>
+
 /* status_t Parcel::writeString16 */
 extern "C" int _ZN7android6Parcel13writeString16EPKDsj();
 extern "C" int _ZN7android6Parcel13writeString16EPKtj() {
     return _ZN7android6Parcel13writeString16EPKDsj();
+}
+
+extern "C" int get_sched_policy(int tid, SchedPolicy* policy) {
+    return SP_BACKGROUND;
 }
