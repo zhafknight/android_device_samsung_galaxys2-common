@@ -130,10 +130,10 @@ PRODUCT_COPY_FILES += \
     prebuilts/vndk/v29/arm/arch-arm-armv7-a-neon/shared/vndk-sp/libcutils.so:$(TARGET_COPY_OUT_VENDOR)/lib/libcutils-v29.so
 
 # Legacy GPS
-# PRODUCT_PACKAGES += \
-#    android.hardware.gnss@1.0-impl \
-#    android.hardware.gnss@1.0-service.exynos4 \
-#    gps.smdk4210
+PRODUCT_PACKAGES += \
+    android.hardware.gnss@1.0-impl \
+    android.hardware.gnss@1.0-service.exynos4 \
+    gps.smdk4210
 
 # Power HAL
 PRODUCT_PACKAGES += \
