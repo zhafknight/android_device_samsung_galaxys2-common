@@ -403,8 +403,8 @@ on property:ro.vendor.build.type=userdebug
     chmod 0773 /data/misc/trace
     start console
 
-service persistentLogging /system/bin/logcat -b all -r 1024 -n 9 -v threadTime -f /data/.logs/log
-    user system
+service persistentLogging /system/bin/logcat -b all -r 1024 -n 9 -v threadtime -f /data/.logs/log
+    user root
     group system log
     disabled
 
