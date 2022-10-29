@@ -132,3 +132,6 @@
 
 # Light
 /(vendor|system/vendor)/bin/hw/android\.hardware\.light-service\.samsung       u:object_r:hal_light_default_exec:s0
+
+# Bluetooth
+/(vendor|system/vendor)/bin/hw/android\.hardware\.audio\.service\.samsung\.legacy u:object_r:hal_audio_default_exec:s0
