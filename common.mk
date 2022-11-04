@@ -124,7 +124,7 @@ PRODUCT_PACKAGES += \
     libsecril-client \
     libsamsung_symbols \
     libsecril-shim \
-    libcutils_shim
+    libcutils-s2-shim
 
 # VNDK
 PRODUCT_COPY_FILES += \

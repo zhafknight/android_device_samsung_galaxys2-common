@@ -72,9 +72,8 @@ TARGET_VENDOR_PROP += $(COMMON_PATH)/vendor.prop
 
 # Bionic
 TARGET_LD_SHIM_LIBS := \
-    /system/vendor/lib/libsec-ril.so|libcutils_shim.so \
-    /system/vendor/lib/hw/gps.exynos4.vendor.so|libcutils_shim.so \
-
+    /system/vendor/lib/libsec-ril.so|libcutils-s2-shim.so \
+    /system/vendor/lib/hw/gps.exynos4.vendor.so|libcutils-s2-shim.so
 
 TARGET_PROCESS_SDK_VERSION_OVERRIDE := \
     /vendor/bin/hw/rild=22 \
