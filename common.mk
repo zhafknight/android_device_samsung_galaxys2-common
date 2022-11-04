@@ -300,14 +300,11 @@ PRODUCT_PROPERTY_OVERRIDES += \
 
 # Filesystem management tools
 PRODUCT_PACKAGES += \
-    make_ext4fs \
-    resize2fs_static \
-    setup_fs
+    resize2fs_static
 
 # F2FS Filesystem
 PRODUCT_PACKAGES += \
-    fsck.f2fs \
-    mkfs.f2fs
+    fsck.f2fs
 
 # NTFS Filesystem
 PRODUCT_PACKAGES += \
@@ -318,9 +315,7 @@ PRODUCT_PACKAGES += \
 # Exfat Filesystem
 PRODUCT_PACKAGES += \
     fsck.exfat \
-    mkfs.exfat \
-    mount.exfat
-
+    mkfs.exfat
 # Live Wallpapers
 PRODUCT_PACKAGES += \
     LiveWallpapersPicker \
