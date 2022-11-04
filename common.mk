@@ -182,7 +182,6 @@ PRODUCT_PACKAGES += \
     android.hardware.keymaster@3.0-impl \
     gralloc.exynos4 \
     hwcomposer.exynos4 \
-    libnetcmdiface \
     libhwconverter \
     libs5pjpeg \
     libfimg \
