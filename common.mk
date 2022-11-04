@@ -174,7 +174,6 @@ PRODUCT_PACKAGES += \
 
 # HAL
 PRODUCT_PACKAGES += \
-    android.hardware.light@2.0-service.samsung \
     vendor.lineage.livedisplay@2.0-service.samsung-exynos \
     android.hardware.graphics.allocator@2.0-impl-exynos4 \
     android.hardware.graphics.mapper@2.0-impl-exynos4 \
@@ -238,10 +237,6 @@ PRODUCT_PROPERTY_OVERRIDES += \
 PRODUCT_PACKAGES += \
     android.hardware.drm@1.0-impl \
     android.hardware.drm@1.0-service-lazy
-
-# Light
-PRODUCT_PACKAGES += \
-    android.hardware.light-service.samsung
 
 # OMX
 PRODUCT_PACKAGES += \
