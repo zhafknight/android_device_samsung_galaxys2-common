@@ -99,8 +99,7 @@ PRODUCT_COPY_FILES += \
 
 # Packages
 PRODUCT_PACKAGES := \
-    com.android.future.usb.accessory \
-    Snap
+    com.android.future.usb.accessory
 
 # Permissions uvents
 PRODUCT_PACKAGES += \
@@ -210,7 +209,6 @@ PRODUCT_PACKAGES += \
     android.hardware.camera.provider@2.4-service-lazy \
     camera.device@1.0-impl-legacy \
     camera.smdk4210 \
-    Snap \
     libstagefright-shim \
     mediaserver.rc
 
