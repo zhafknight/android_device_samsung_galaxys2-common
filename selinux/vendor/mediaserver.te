@@ -1,3 +1,7 @@
 allow mediaserver mfc_device:chr_file rw_file_perms;
 allow mediaserver ion_device:chr_file { write };
 allow mediaserver hal_camera_default:binder { call transfer };
+allow mediaserver sensor_privacy_service:service_manager find;
+allow mediaserver hal_camera_hwservice:hwservice_manager find;
+allow mediaserver cameraproxy_service:service_manager find;
+allow mediaserver cameraserver_service:service_manager { add };
