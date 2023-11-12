@@ -18,7 +18,7 @@
 #ifndef YAMAHA_MC1N2_AUDIO_H
 #define YAMAHA_MC1N2_AUDIO_H
 
-#include <system/audio.h>
+#include <hardware/audio.h>
 
 #include "mc1n2.h"
 

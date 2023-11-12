@@ -19,6 +19,8 @@ ifeq ($(strip $(BOARD_USE_YAMAHA_MC1N2_AUDIO)),true)
 
 include $(CLEAR_VARS)
 
+LOCAL_HEADER_LIBRARIES := libhardware_headers
+
 LOCAL_SRC_FILES := \
 	device/galaxys2.c \
 	yamaha-mc1n2-audio.c

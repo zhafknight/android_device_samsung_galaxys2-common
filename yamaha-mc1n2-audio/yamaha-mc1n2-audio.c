@@ -28,7 +28,7 @@
 #define LOG_TAG "Yamaha-MC1N2-Audio"
 #include <cutils/log.h>
 
-#include <system/audio.h>
+#include <hardware/audio.h>
 
 #include <yamaha-mc1n2-audio.h>
 
