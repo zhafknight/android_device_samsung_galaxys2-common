@@ -621,7 +621,8 @@ int audio_hw_open_output_stream(struct audio_hw_device *dev,
                                 audio_devices_t devices,
                                 audio_output_flags_t flags,
                                 struct audio_config *config,
-	                        struct audio_stream_out **stream_out)
+	                        struct audio_stream_out **stream_out,
+                                const char *address)
 {
 	struct tinyalsa_audio_device *tinyalsa_audio_device;
 	struct tinyalsa_audio_stream_out *tinyalsa_audio_stream_out;

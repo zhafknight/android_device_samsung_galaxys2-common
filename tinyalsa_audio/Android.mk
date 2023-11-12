@@ -19,6 +19,10 @@ ifeq ($(strip $(BOARD_USE_TINYALSA_AUDIO)),true)
 
 include $(CLEAR_VARS)
 
+LOCAL_HEADER_LIBRARIES := libutils_headers \
+    libsystem_headers \
+    libhardware_headers
+
 LOCAL_SRC_FILES := \
 	audio_hw.c \
 	audio_out.c \
