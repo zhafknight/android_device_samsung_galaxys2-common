@@ -386,7 +386,7 @@ $(call inherit-product, $(SRC_TARGET_DIR)/product/product_launched_with_k.mk)
 $(call inherit-product, vendor/samsung/galaxys2-common/common-vendor.mk)
 
 # Use GO
-$(call inherit-product, device/samsung/galaxys2-common/go_defaults.mk)
+$(call inherit-product, build/make/target/product/go_defaults.mk)
 
 # Apply Dalvik config for 1G phone
 $(call inherit-product, frameworks/native/build/phone-xhdpi-1024-dalvik-heap.mk)
