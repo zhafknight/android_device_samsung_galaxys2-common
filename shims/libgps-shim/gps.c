@@ -15,7 +15,7 @@
  */
 #define LOG_TAG "libgps-shim"
 
-#include <log/Log.h>
+#include <log/log.h>
 #include <hardware/gps.h>
 #include <android/api-level.h>
 
