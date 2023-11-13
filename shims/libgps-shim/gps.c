@@ -42,7 +42,7 @@ static const GpsFilterLocation gpsFilterLocations[] = {
     {  50, true, 16.0f,  8, 60000 },
 };
 
-static gpsFilterLocationsLength = sizeof(gpsFilterLocations) / sizeof(GpsFilterLocation);
+static int gpsFilterLocationsLength = sizeof(gpsFilterLocations) / sizeof(GpsFilterLocation);
 
 static GpsFilterLocation get_filterlocation(float accuracy) {
     for (int index = 0;index < gpsFilterLocationsLength; index++) {
@@ -306,7 +306,7 @@ static void shim_agpsril_init(AGpsRilCallbacks* callbacks) {
     vendor_agpsril_init(&shimmed_callbacks);
 }
 
-static void shim_agpsril_set_ref_location(AGpsRefLocation *agps_reflocation, size_t sz_struct) {
+static void shim_agpsril_set_ref_location(const AGpsRefLocation *agps_reflocation, size_t sz_struct) {
 	AGpsRefLocation_vendor vendor_ref;
 	if (sizeof(AGpsRefLocation_vendor) > sz_struct) {
 		ALOGE("%s: AGpsRefLocation is too small, bailing out!", __func__);
@@ -332,14 +332,6 @@ static void shim_agpsril_set_ref_location(AGpsRefLocation *agps_reflocation, siz
 		vendor_ref.u.cellID.cid,
 		vendor_ref.u.mac);
 	vendor_agpsril_set_ref_location(&vendor_ref, sizeof(AGpsRefLocation_vendor));
-
-	agps_reflocation->type = vendor_ref.type;
-	agps_reflocation->u.cellID.type = vendor_ref.u.cellID.type;
-	agps_reflocation->u.cellID.mcc = vendor_ref.u.cellID.mcc;
-	agps_reflocation->u.cellID.mnc = vendor_ref.u.cellID.mnc;
-	agps_reflocation->u.cellID.lac = vendor_ref.u.cellID.lac;
-	agps_reflocation->u.cellID.cid = vendor_ref.u.cellID.cid;
-	agps_reflocation->u.mac = vendor_ref.u.mac;
 }
 
 static void shim_agpsril_set_set_id(AGpsSetIDType type, const char* setid) {
@@ -480,7 +472,7 @@ static int shim_gps_set_position_mode(GpsPositionMode mode, GpsPositionRecurrenc
 	return result;
 }
 
-static void* shim_gps_get_extension(const char* name) {
+const void* shim_gps_get_extension(const char* name) {
 	ALOGD("%s(%s)", __func__, name);
 	if (strcmp(name, AGPS_RIL_INTERFACE) == 0) {
 		if (aGpsInterface == NULL) {
@@ -501,8 +493,8 @@ static void* shim_gps_get_extension(const char* name) {
 		vendor_agpsril_init = aGpsRil->init;
 		aGpsRil->init = shim_agpsril_init;
 
-		vendor_agpsril_set_ref_location = aGpsRil->set_ref_location;
-		aGpsRil->set_ref_location = shim_agpsril_set_ref_location;
+		vendor_agpsril_set_ref_location = (void (*)(const AGpsRefLocation_vendor *agps_reflocation, size_t sz_struct))aGpsRil->set_ref_location;
+		aGpsRil->set_ref_location = &shim_agpsril_set_ref_location;
 
 		vendor_agpsril_set_set_id = aGpsRil->set_set_id;
 		aGpsRil->set_set_id = shim_agpsril_set_set_id;
@@ -561,11 +553,11 @@ static int shim_gps_init (GpsCallbacks* gpsCallbacks) {
 	return vendor_gps_init(&vendor_gpsCallbacks);
 }
 
-static GpsInterface* shim_get_gps_interface(struct gps_device_t* dev) {
+const GpsInterface* shim_get_gps_interface(struct gps_device_t* dev) {
 	ALOGD("%s: shimming GpsInterface", __func__);
 	GpsInterface *halInterface = vendor_get_gps_interface(dev);
 
-	vendor_gps_get_extension = halInterface->get_extension;
+	vendor_gps_get_extension = (void *(*)(const char *)) halInterface->get_extension;
 	halInterface->get_extension = &shim_gps_get_extension;
 
 	vendor_gps_init = halInterface->init;
@@ -621,7 +613,7 @@ static int open_gps(const struct hw_module_t* module, char const* name,
 	}
 	ALOGD("Successfully loaded real GPS hal, shimming get_gps_interface...");
 	// now, we shim hw_device_t
-	vendor_get_gps_interface = (*gps)->get_gps_interface;
+	vendor_get_gps_interface = (GpsInterface*(*)(struct gps_device_t *)) &(*gps)->get_gps_interface;
 	(*gps)->get_gps_interface = &shim_get_gps_interface;
 
 	return 0;

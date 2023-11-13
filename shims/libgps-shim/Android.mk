@@ -16,6 +16,9 @@ LOCAL_PATH := $(call my-dir)
 
 include $(CLEAR_VARS)
 
+LOCAL_HEADER_LIBRARIES := \
+    libhardware_headers
+
 LOCAL_SRC_FILES := gps.c
 
 LOCAL_SHARED_LIBRARIES := \
