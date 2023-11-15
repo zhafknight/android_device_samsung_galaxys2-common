@@ -3,6 +3,9 @@ include $(CLEAR_VARS)
 
 LOCAL_MODULE_TAGS := optional
 
+LOCAL_HEADER_LIBRARIES := \
+	ril_headers
+
 LOCAL_SRC_FILES := \
 	proto/pb_common.cpp \
 	proto/pb_decode.cpp \
