@@ -86,6 +86,9 @@ TARGET_PROCESS_SDK_VERSION_OVERRIDE := \
     /system/vendor/lib/libsecril-cl-gps.so=22 \
     /system/vendor/lib/hw/gps.exynos4.vendor.so=22
 
+# Enable memfd backport
+$(call soong_config_set,art,has_memfd_backport,true)
+
 # Include an expanded selection of fonts
 EXTENDED_FONT_FOOTPRINT := true
 
