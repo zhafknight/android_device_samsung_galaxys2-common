@@ -24,7 +24,8 @@ LOCAL_SRC_FILES := \
 	yamaha-mc1n2-audio.c
 
 LOCAL_C_INCLUDES += \
-	$(LOCAL_PATH)/include
+	$(LOCAL_PATH)/include \
+	system/media/audio/include
 
 LOCAL_SHARED_LIBRARIES := \
 	libc \
