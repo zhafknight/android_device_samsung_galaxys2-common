@@ -26,15 +26,16 @@ LOCAL_SRC_FILES := \
 	exynos_v4l2.c
 
 LOCAL_C_INCLUDES := \
-	system/media/camera/include \
+        system/media/camera/include \
 	hardware/samsung/exynos4/hal/include
 
-LOCAL_SHARED_LIBRARIES := libutils libcutils liblog libcamera_client libhardware libs5pjpeg
+LOCAL_SHARED_LIBRARIES := libutils libcutils liblog libhardware libs5pjpeg
 LOCAL_PRELINK_MODULE := false
 
-LOCAL_MODULE := camera.$(TARGET_BOOTLOADER_BOARD_NAME)
+LOCAL_MODULE := camera.$(TARGET_BOOTLOADER_BOARD_NAME)-hal1
 LOCAL_MODULE_RELATIVE_PATH := hw
-LOCAL_MODULE_TAGS := optional
 LOCAL_VENDOR_MODULE := true
+LOCAL_MODULE_TAGS := optional
+
 
 include $(BUILD_SHARED_LIBRARY)

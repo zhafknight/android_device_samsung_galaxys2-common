@@ -192,14 +192,16 @@ PRODUCT_PACKAGES += \
     android.hardware.vibrator@1.0-impl \
     android.hardware.vibrator@1.0-service
 
-#Camera
+# Camera: HIDL provider -> HAL3 wrapper -> private HAL1 backend
 PRODUCT_PACKAGES += \
-    android.hardware.camera.provider@2.4-impl-legacy \
+    android.hardware.camera.provider@2.4-impl \
     android.hardware.camera.provider@2.4-service-lazy \
-    camera.device@1.0-impl-legacy \
     camera.smdk4210 \
-    libstagefright-shim \
-    mediaserver.rc
+    camera.smdk4210-hal1 \
+    libs5pjpeg
+
+PRODUCT_VENDOR_PROPERTIES += \
+    ro.camera.enableLazyHal=true
 
     libUMP \
     libhwc2on1adapter \
@@ -211,8 +213,8 @@ PRODUCT_PROPERTY_OVERRIDES += \
     debug.stagefright.omx_default_rank.sw-audio=1 \
     debug.stagefright.omx_default_rank=0 \
     vendor.mediacodec.binder.size=4 \
-    media.stagefright.thumbnail.prefer_hw_codecs=true \
-    ro.camera.enableLazyHal=true
+    media.stagefright.thumbnail.prefer_hw_codecs=true
+
 
 # MFC API
 PRODUCT_PACKAGES += \

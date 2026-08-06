@@ -149,7 +149,11 @@ BOARD_RIL_CLASS := ../../../device/samsung/galaxys2-common/ril
 
 # Camera
 BOARD_CAMERA_HAVE_ISO := true
-TARGET_HAS_LEGACY_CAMERA_HAL1 := true
+# HAL1 is loaded privately by camera.smdk4210 HAL3 wrapper.
+
+# Device tree provides camera.smdk4210 itself.
+# Prevent hardware/samsung/exynos4/hal/libcamera from building camera.exynos4.
+TARGET_PROVIDES_CAMERA_HAL := true
 
 # WiFi
 BOARD_WLAN_DEVICE := bcmdhd
@@ -205,8 +209,8 @@ BOARD_CUSTOM_BOOTIMG := true
 BOARD_CUSTOM_BOOTIMG_MK := device/samsung/galaxys2-common/shbootimg.mk
 BOARD_CUSTOM_KERNEL_MK := device/samsung/galaxys2-common/shkernel.mk
 
+
 # Memfd
 TARGET_HAS_MEMFD_BACKPORT := true
-
 # Use the non-open-source parts, if they're present
 -include vendor/samsung/galaxys2-common/BoardConfigVendor.mk
