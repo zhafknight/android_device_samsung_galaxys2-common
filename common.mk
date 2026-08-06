@@ -151,10 +151,6 @@ PRODUCT_PROPERTY_OVERRIDES += \
 PRODUCT_PROPERTY_OVERRIDES += \
     ro.charger.enable_suspend=true
 
-# Use legacy ADB USB support
-PRODUCT_PROPERTY_OVERRIDES += \
-    ro.adb.nonblocking_ffs=false
-
 # Audio Packages
 PRODUCT_PACKAGES += \
     android.hardware.audio@7.0-impl \
