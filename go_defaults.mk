@@ -12,16 +12,16 @@ PRODUCT_ALWAYS_PREOPT_EXTRACTED_APK := true
 # Use a profile based boot image for this device. Note that this is currently a
 # generic profile and not Android Go optimized.
 PRODUCT_USE_PROFILE_FOR_BOOT_IMAGE := true
-PRODUCT_DEX_PREOPT_BOOT_IMAGE_PROFILE_LOCATION := frameworks/base/config/boot-image-profile.txt
+PRODUCT_DEX_PREOPT_BOOT_IMAGE_PROFILE_LOCATION := frameworks/base/boot/boot-image-profile.txt
 
 # Do not generate libartd.
 PRODUCT_ART_TARGET_INCLUDE_DEBUG_BUILD := false
 
 # Do not spin up a separate process for the network stack on go devices, use an in-process APK.
-PRODUCT_PACKAGES += InProcessNetworkStack
+
 PRODUCT_PACKAGES += CellBroadcastAppPlatform
 PRODUCT_PACKAGES += CellBroadcastServiceModulePlatform
-PRODUCT_PACKAGES += com.android.tethering.inprocess
+
 
 # Strip the local variable table and the local variable type table to reduce
 # the size of the system image. This has no bearing on stack traces, but will
