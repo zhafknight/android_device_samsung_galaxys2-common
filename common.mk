@@ -31,6 +31,31 @@ PRODUCT_ENFORCE_RRO_EXCLUDED_OVERLAYS  += * \
     $(COMMON_PATH)/overlay-lineage/lineage-sdk \
     $(COMMON_PATH)/overlay/hardware
 
+# Legacy vendor C++ runtime
+PRODUCT_PACKAGES += \
+    libstdc++_vendor
+
+# Include Go Package
+PRODUCT_PACKAGES += \
+    SystemUIGo
+
+PRODUCT_DEXPREOPT_SPEED_APPS += \
+    SystemUIGo
+
+# LineageOS PDF reader
+PRODUCT_PACKAGES += \
+    Camelot
+
+# ConfigStore
+PRODUCT_PACKAGES += \
+    disable_configstore
+
+# Disable multiuser feature
+PRODUCT_PROPERTY_OVERRIDES += \
+    fw.max_users=1
+
+PRODUCT_COMPRESSED_APEX := false
+
 # Init
 PRODUCT_COPY_FILES := \
     $(COMMON_PATH)/rootdir/init.smdk4210.usb.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/hw/init.smdk4210.usb.rc \
@@ -358,7 +383,6 @@ PRODUCT_TAGS += dalvik.gc.type-precise
 # Keylayouts
 PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/configs/excluded-input-devices.xml:system/etc/excluded-input-devices.xml
-
 # Seccomp
 PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/seccomp/mediacodec.policy:$(TARGET_COPY_OUT_VENDOR)/etc/seccomp_policy/mediacodec.policy
