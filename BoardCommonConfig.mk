@@ -170,8 +170,7 @@ TARGET_NEEDS_NETD_DIRECT_CONNECT_RULE := true
 
 # Bluetooth
 BOARD_HAVE_BLUETOOTH := true
-BOARD_HAVE_BLUETOOTH_BCM := true
-BOARD_CUSTOM_BT_CONFIG := device/samsung/galaxys2-common/bluetooth/vnd_smdk4210.txt
+PRODUCT_SOONG_NAMESPACES += hardware/broadcom/libbt
 
 # Selinux
 SELINUX_IGNORE_NEVERALLOWS := true
