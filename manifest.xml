@@ -169,13 +169,9 @@
             <instance>default</instance>
         </interface>
     </hal>
-    <hal format="hidl">
-        <name>vendor.lineage.touch</name>
-        <transport>hwbinder</transport>
-        <version>1.0</version>
-        <interface>
-            <name>IKeyDisabler</name>
-            <instance>default</instance>
-        </interface>
+    <hal format="aidl">
+       <name>vendor.lineage.touch</name>
+       <version>1</version>
+       <fqname>IKeyDisabler/default</fqname>
     </hal>
 </manifest>

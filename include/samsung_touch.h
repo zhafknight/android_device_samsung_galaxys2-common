@@ -31,9 +31,9 @@
 #define TSP_CMD_NODE "NOT_SUPPORTED"
 
 // For KeyDisabler
-#define KEY_DISABLER_NODE "/sys/class/sec/sec_touchkey/touchkey_enabled"
+#define KEY_DISABLER_NODE "/sys/class/sec/sec_touchkey/keypad_enable"
 
-//For TouchscreenGesture
-#define TOUCHSCREEN_GESTURE_NODE "NOT_SUPPORTED"
+// For TouchscreenGesture
+#define EPEN_GESTURE_NODE "NOT_SUPPORTED"
 
 #endif  // SAMSUNG_TOUCH_H

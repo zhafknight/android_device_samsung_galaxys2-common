@@ -115,7 +115,7 @@ PRODUCT_PACKAGES += \
 
 # Touch features
 PRODUCT_PACKAGES += \
-    vendor.lineage.touch@1.0-service.samsung
+    vendor.lineage.touch-service.samsung
 
 # Legacy RIL
 PRODUCT_PACKAGES += \
@@ -138,6 +138,8 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     android.hardware.power@1.0-impl \
     android.hardware.power@1.0-service
+
+$(call soong_config_set,samsungVars,target_specific_header_path,$(COMMON_PATH)/include)
 
 # Battery
 PRODUCT_PACKAGES += \
