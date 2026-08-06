@@ -33,8 +33,8 @@ PRODUCT_ENFORCE_RRO_EXCLUDED_OVERLAYS  += * \
 
 # Init
 PRODUCT_COPY_FILES := \
-    $(COMMON_PATH)/rootdir/init.smdk4210.usb.rc:root/init.smdk4210.usb.rc \
-    $(COMMON_PATH)/rootdir/init.smdk4210.rc:root/init.smdk4210.rc
+    $(COMMON_PATH)/rootdir/init.smdk4210.usb.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/hw/init.smdk4210.usb.rc \
+    $(COMMON_PATH)/rootdir/init.smdk4210.rc:$(TARGET_COPY_OUT_VENDOR)/etc/init/hw/init.smdk4210.rc
 
 # init.d
 PRODUCT_COPY_FILES += \
@@ -42,7 +42,7 @@ PRODUCT_COPY_FILES += \
 
 # File system table
 PRODUCT_COPY_FILES += \
-    $(COMMON_PATH)/rootdir/fstab.smdk4210:root/fstab.smdk4210 \
+    $(COMMON_PATH)/rootdir/fstab.smdk4210:$(TARGET_COPY_OUT_VENDOR)/etc/fstab.smdk4210 \
     $(COMMON_PATH)/rootdir/fstab.smdk4210:$(TARGET_COPY_OUT_RAMDISK)/fstab.smdk4210
 
 # Component overrides
@@ -59,7 +59,7 @@ endif
 
 # Recovery rootdir
 PRODUCT_COPY_FILES += \
-    $(COMMON_PATH)/rootdir/init.recovery.smdk4210.rc:root/init.recovery.smdk4210.rc
+    $(COMMON_PATH)/rootdir/init.recovery.smdk4210.rc:recovery/root/init.recovery.smdk4210.rc
 
 # Audio
 PRODUCT_COPY_FILES += \
