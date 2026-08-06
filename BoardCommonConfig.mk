@@ -213,7 +213,6 @@ BOARD_CUSTOM_BOOTIMG_MK := device/samsung/galaxys2-common/shbootimg.mk
 BOARD_CUSTOM_KERNEL_MK := device/samsung/galaxys2-common/shkernel.mk
 
 
-# Memfd
-TARGET_HAS_MEMFD_BACKPORT := true
+
 # Use the non-open-source parts, if they're present
 -include vendor/samsung/galaxys2-common/BoardConfigVendor.mk
