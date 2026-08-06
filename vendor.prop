@@ -176,6 +176,9 @@ vendor.usb.diag.func.name=diag
 persist.debug.wfd.enable=1
 persist.sys.wfd.virtual=0
 
+# BPF
+ro.bpf.kver_override=5.4.300
+
 # ADB
 ro.adb.secure=0
 ro.debuggable=1
