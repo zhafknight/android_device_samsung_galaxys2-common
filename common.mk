@@ -299,7 +299,7 @@ PRODUCT_PROPERTY_OVERRIDES += \
 
 # Filesystem management tools
 PRODUCT_PACKAGES += \
-    resize2fs_static
+    resize2fs
 
 # F2FS Filesystem
 PRODUCT_PACKAGES += \
