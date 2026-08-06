@@ -98,22 +98,28 @@ int audio_out_set_route(struct tinyalsa_audio_stream_out *stream_out,
 
 void audio_hw_close_output_stream(struct audio_hw_device *dev,
 	struct audio_stream_out *stream);
-int audio_hw_open_output_stream(struct audio_hw_device *dev,
-                                audio_io_handle_t handle,
-                                audio_devices_t devices,
-                                audio_output_flags_t flags,
-                                struct audio_config *config,
-                                struct audio_stream_out **stream_out);
+int audio_hw_open_output_stream(
+    struct audio_hw_device *dev,
+    audio_io_handle_t handle,
+    audio_devices_t devices,
+    audio_output_flags_t flags,
+    struct audio_config *config,
+    struct audio_stream_out **stream_out,
+    const char *address);
 
 int audio_in_set_route(struct tinyalsa_audio_stream_in *stream_in,
 	audio_devices_t device);
 
 void audio_hw_close_input_stream(struct audio_hw_device *dev,
 	struct audio_stream_in *stream);
-int audio_hw_open_input_stream(struct audio_hw_device *dev,
-                               audio_io_handle_t handle,
-                               audio_devices_t devices,
-                               struct audio_config *config,
-                               struct audio_stream_in **stream_in);
+int audio_hw_open_input_stream(
+    struct audio_hw_device *dev,
+    audio_io_handle_t handle,
+    audio_devices_t devices,
+    struct audio_config *config,
+    struct audio_stream_in **stream_in,
+    audio_input_flags_t flags,
+    const char *address,
+    audio_source_t source);
 
 #endif

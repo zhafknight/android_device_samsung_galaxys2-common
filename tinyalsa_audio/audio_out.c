@@ -616,12 +616,14 @@ void audio_hw_close_output_stream(struct audio_hw_device *dev,
 	pthread_mutex_unlock(&tinyalsa_audio_device->lock);
 }
 
-int audio_hw_open_output_stream(struct audio_hw_device *dev,
-                                audio_io_handle_t handle,
-                                audio_devices_t devices,
-                                audio_output_flags_t flags,
-                                struct audio_config *config,
-	                        struct audio_stream_out **stream_out)
+int audio_hw_open_output_stream(
+    struct audio_hw_device *dev,
+    audio_io_handle_t handle,
+    audio_devices_t devices,
+    audio_output_flags_t flags,
+    struct audio_config *config,
+    struct audio_stream_out **stream_out,
+    const char *address)
 {
 	struct tinyalsa_audio_device *tinyalsa_audio_device;
 	struct tinyalsa_audio_stream_out *tinyalsa_audio_stream_out;

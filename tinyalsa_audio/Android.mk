@@ -33,6 +33,8 @@ LOCAL_C_INCLUDES += \
 	system/media/audio_effects/include \
 	hardware/tinyalsa-audio/include
 
+LOCAL_HEADER_LIBRARIES += libhardware_headers
+
 LOCAL_SHARED_LIBRARIES := \
 	libc \
 	libcutils \
