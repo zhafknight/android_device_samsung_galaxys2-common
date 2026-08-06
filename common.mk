@@ -97,7 +97,7 @@ PRODUCT_COPY_FILES += \
     $(COMMON_PATH)/configs/gps.conf:$(TARGET_COPY_OUT_SYSTEM)/etc/gps.conf \
 
 # Packages
-PRODUCT_PACKAGES := \
+PRODUCT_PACKAGES += \
     com.android.future.usb.accessory
 
 # Permissions uvents
@@ -106,7 +106,7 @@ PRODUCT_PACKAGES += \
 
 # USB
 PRODUCT_PACKAGES += \
-    android.hardware.usb@1.0-service.basic
+    android.hardware.usb@1.3-service.basic
 
 # Keymaster
 PRODUCT_PACKAGES += \
