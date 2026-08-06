@@ -383,11 +383,3 @@ $(call inherit-product, device/samsung/galaxys2-common/go_defaults.mk)
 # Apply Dalvik config for 1G phone
 $(call inherit-product, frameworks/native/build/phone-xhdpi-1024-dalvik-heap.mk)
 
-# Enable ADB debugging at boot
-ifeq ($(WITH_ADB_DEBUG_AT_BOOT),true)
-PRODUCT_SYSTEM_DEFAULT_PROPERTIES += \
-    ro.adb.secure=0 \
-    ro.debuggable=1 \
-    persist.service.adb.enable=1 \
-    persist.sys.usb.config=adb
-endif
