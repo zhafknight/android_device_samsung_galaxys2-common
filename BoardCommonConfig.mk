@@ -205,15 +205,15 @@ BOARD_CHARGER_SHOW_PERCENTAGE := true
 WITH_LINEAGE_CHARGER := false
 
 # Boot.img
-DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE += \
-    device/samsung/galaxys2-common/framework_compatibility_matrix.xml
-
-AB_OTA_UPDATER := false
 BOARD_CUSTOM_BOOTIMG := true
 BOARD_CUSTOM_BOOTIMG_MK := device/samsung/galaxys2-common/shbootimg.mk
 BOARD_CUSTOM_KERNEL_MK := device/samsung/galaxys2-common/shkernel.mk
 
 
+DEVICE_FRAMEWORK_COMPATIBILITY_MATRIX_FILE += \
+    device/samsung/galaxys2-common/framework_compatibility_matrix.xml
+
+AB_OTA_UPDATER := false
 
 # Use the non-open-source parts, if they're present
 -include vendor/samsung/galaxys2-common/BoardConfigVendor.mk

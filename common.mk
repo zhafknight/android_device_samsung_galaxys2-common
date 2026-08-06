@@ -139,6 +139,8 @@ PRODUCT_PACKAGES += \
     android.hardware.keymaster@3.0-service
 
 # Touch features
+$(call soong_config_set,samsungVars,target_specific_header_path,$(COMMON_PATH)/include)
+
 PRODUCT_PACKAGES += \
     vendor.lineage.touch-service.samsung
 
@@ -160,8 +162,6 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     android.hardware.power@1.0-impl \
     android.hardware.power@1.0-service
-
-$(call soong_config_set,samsungVars,target_specific_header_path,$(COMMON_PATH)/include)
 
 # Battery
 PRODUCT_PACKAGES += \
@@ -197,6 +197,8 @@ PRODUCT_PACKAGES += \
     libs5pjpeg \
     libfimg \
     libsecion \
+    libUMP \
+    libhwc2on1adapter \
     libC
 
 # Bluetooth
@@ -226,8 +228,6 @@ PRODUCT_PACKAGES += \
 PRODUCT_VENDOR_PROPERTIES += \
     ro.camera.enableLazyHal=true
 
-    libUMP \
-    libhwc2on1adapter \
 PRODUCT_PROPERTY_OVERRIDES += \
     media.settings.xml=/vendor/etc/media_profiles.xml \
     debug.stagefright.ccodec=0 \
@@ -362,6 +362,7 @@ PRODUCT_TAGS += dalvik.gc.type-precise
 # Keylayouts
 PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/configs/excluded-input-devices.xml:system/etc/excluded-input-devices.xml
+
 # Seccomp
 PRODUCT_COPY_FILES += \
     $(LOCAL_PATH)/seccomp/mediacodec.policy:$(TARGET_COPY_OUT_VENDOR)/etc/seccomp_policy/mediacodec.policy
@@ -382,4 +383,3 @@ $(call inherit-product, device/samsung/galaxys2-common/go_defaults.mk)
 
 # Apply Dalvik config for 1G phone
 $(call inherit-product, frameworks/native/build/phone-xhdpi-1024-dalvik-heap.mk)
-
