@@ -15,7 +15,7 @@
  */
 #define LOG_TAG "libgps-shim"
 
-#include <utils/Log.h>
+#include <log/log.h>
 #include <hardware/gps.h>
 #include <android/api-level.h>
 
@@ -26,7 +26,7 @@
 #include <string.h>
 
 #include "gps.h"
-#define REAL_GPS_PATH "system/vendor/lib/hw/gps.exynos4.vendor.so"
+#define REAL_GPS_PATH "/system/vendor/lib/hw/gps.exynos4.vendor.so"
 
 // Speed conversion km/h to gps speed-value
 #define SPEED_CONVERT 0.2728
@@ -42,7 +42,7 @@ static const GpsFilterLocation gpsFilterLocations[] = {
     {  50, true, 16.0f,  8, 60000 },
 };
 
-static gpsFilterLocationsLength = sizeof(gpsFilterLocations) / sizeof(GpsFilterLocation);
+static const size_t gpsFilterLocationsLength = sizeof(gpsFilterLocations) / sizeof(GpsFilterLocation);
 
 static GpsFilterLocation get_filterlocation(float accuracy) {
     for (int index = 0;index < gpsFilterLocationsLength; index++) {
@@ -58,9 +58,9 @@ static GpsLocation reportLocation;
 static GpsCallbacks_vendor vendor_gpsCallbacks;
 
 /* GPS methods */
-static GpsInterface* (*vendor_get_gps_interface)(struct gps_device_t* dev);
-static void* (*vendor_gps_get_extension)(const char* name);
-static int (*vendor_gps_init)(GpsCallbacks* gpsCallbacks);
+static const GpsInterface* (*vendor_get_gps_interface)(struct gps_device_t* dev);
+static const void* (*vendor_gps_get_extension)(const char* name);
+static int (*vendor_gps_init)(GpsCallbacks_vendor* gpsCallbacks);
 static int (*vendor_gps_start)();
 static int (*vendor_gps_stop)();
 static void (*vendor_gps_cleanup)();
@@ -306,7 +306,7 @@ static void shim_agpsril_init(AGpsRilCallbacks* callbacks) {
     vendor_agpsril_init(&shimmed_callbacks);
 }
 
-static void shim_agpsril_set_ref_location(AGpsRefLocation *agps_reflocation, size_t sz_struct) {
+static void shim_agpsril_set_ref_location(const AGpsRefLocation *agps_reflocation, size_t sz_struct) {
 	AGpsRefLocation_vendor vendor_ref;
 	if (sizeof(AGpsRefLocation_vendor) > sz_struct) {
 		ALOGE("%s: AGpsRefLocation is too small, bailing out!", __func__);
@@ -332,14 +332,6 @@ static void shim_agpsril_set_ref_location(AGpsRefLocation *agps_reflocation, siz
 		vendor_ref.u.cellID.cid,
 		vendor_ref.u.mac);
 	vendor_agpsril_set_ref_location(&vendor_ref, sizeof(AGpsRefLocation_vendor));
-
-	agps_reflocation->type = vendor_ref.type;
-	agps_reflocation->u.cellID.type = vendor_ref.u.cellID.type;
-	agps_reflocation->u.cellID.mcc = vendor_ref.u.cellID.mcc;
-	agps_reflocation->u.cellID.mnc = vendor_ref.u.cellID.mnc;
-	agps_reflocation->u.cellID.lac = vendor_ref.u.cellID.lac;
-	agps_reflocation->u.cellID.cid = vendor_ref.u.cellID.cid;
-	agps_reflocation->u.mac = vendor_ref.u.mac;
 }
 
 static void shim_agpsril_set_set_id(AGpsSetIDType type, const char* setid) {
@@ -480,7 +472,7 @@ static int shim_gps_set_position_mode(GpsPositionMode mode, GpsPositionRecurrenc
 	return result;
 }
 
-static void* shim_gps_get_extension(const char* name) {
+static const void* shim_gps_get_extension(const char* name) {
 	ALOGD("%s(%s)", __func__, name);
 	if (strcmp(name, AGPS_RIL_INTERFACE) == 0) {
 		if (aGpsInterface == NULL) {
@@ -501,7 +493,7 @@ static void* shim_gps_get_extension(const char* name) {
 		vendor_agpsril_init = aGpsRil->init;
 		aGpsRil->init = shim_agpsril_init;
 
-		vendor_agpsril_set_ref_location = aGpsRil->set_ref_location;
+		vendor_agpsril_set_ref_location = (void (*)(const AGpsRefLocation_vendor *, size_t))aGpsRil->set_ref_location;
 		aGpsRil->set_ref_location = shim_agpsril_set_ref_location;
 
 		vendor_agpsril_set_set_id = aGpsRil->set_set_id;
@@ -561,14 +553,14 @@ static int shim_gps_init (GpsCallbacks* gpsCallbacks) {
 	return vendor_gps_init(&vendor_gpsCallbacks);
 }
 
-static GpsInterface* shim_get_gps_interface(struct gps_device_t* dev) {
+static const GpsInterface* shim_get_gps_interface(struct gps_device_t* dev) {
 	ALOGD("%s: shimming GpsInterface", __func__);
-	GpsInterface *halInterface = vendor_get_gps_interface(dev);
+	GpsInterface *halInterface = (GpsInterface *)vendor_get_gps_interface(dev);
 
 	vendor_gps_get_extension = halInterface->get_extension;
 	halInterface->get_extension = &shim_gps_get_extension;
 
-	vendor_gps_init = halInterface->init;
+	vendor_gps_init = (int (*)(GpsCallbacks_vendor *))halInterface->init;
 	halInterface->init = &shim_gps_init;
 
 	vendor_gps_start = halInterface->start;

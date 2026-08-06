@@ -90,7 +90,7 @@ $(call inherit-product-if-exists, hardware/broadcom/wlan/bcmdhd/firmware/bcm4330
 PRODUCT_COPY_FILES += \
     $(COMMON_PATH)/configs/google.xml:$(TARGET_COPY_OUT_VENDOR)/etc/sysconfig/google.xml
 
-# Gps
+# GPS
 PRODUCT_COPY_FILES += \
     $(COMMON_PATH)/configs/sirfgps.conf:$(TARGET_COPY_OUT_VENDOR)/etc/sirfgps.conf \
     $(COMMON_PATH)/configs/gps_debug.conf:$(TARGET_COPY_OUT_SYSTEM)/etc/gps_debug.conf \
@@ -127,9 +127,9 @@ PRODUCT_PACKAGES += \
 
 # Legacy GPS
 PRODUCT_PACKAGES += \
-    android.hardware.gnss@1.0-impl \
+    android.hardware.gnss@1.0-impl.los20 \
     android.hardware.gnss@1.0-service.exynos4 \
-    gps.smdk4210
+    gps.smdk4210 \
 
 # Power HAL
 PRODUCT_PACKAGES += \
