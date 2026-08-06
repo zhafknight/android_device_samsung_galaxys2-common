@@ -125,9 +125,6 @@
 # Gatekeeper
 /(vendor|system/vendor)/bin/hw/android\.hardware\.gatekeeper@1\.0-service\.software       u:object_r:hal_gatekeeper_default_exec:s0
 
-# Wifi
-/(vendor|system/vendor)/bin/hw/android\.hardware\.wifi@1\.0-service-lazy\.legacy       u:object_r:hal_wifi_default_exec:s0
-
 /system/bin/clean_scratch_files                         u:object_r:clean_scratch_files_exec:s0
 
 # Light
@@ -135,3 +132,4 @@
 
 # Bluetooth
 /(vendor|system/vendor)/bin/hw/android\.hardware\.audio\.service\.samsung\.legacy u:object_r:hal_audio_default_exec:s0
+
