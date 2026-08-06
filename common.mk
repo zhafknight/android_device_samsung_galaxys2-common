@@ -309,10 +309,6 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     fsck.exfat \
     mkfs.exfat
-# Live Wallpapers
-PRODUCT_PACKAGES += \
-    LiveWallpapersPicker \
-    librs_jni
 
 # Wifi
 PRODUCT_PACKAGES += \
