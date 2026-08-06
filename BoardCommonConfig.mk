@@ -40,7 +40,7 @@ TARGET_CPU_VARIANT := cortex-a9
 ARCH_ARM_HAVE_NEON := true
 ARCH_ARM_HAVE_TLS_REGISTER := true
 TARGET_USES_GRALLOC1 := true
-TARGET_USES_64_BIT_BINDER := true
+
 
 BOARD_VENDOR := samsung
 TARGET_BOARD_PLATFORM := exynos4
@@ -106,7 +106,7 @@ BOARD_ROOT_EXTRA_FOLDERS := efs misc
 BOARD_ROOT_EXTRA_SYMLINKS := /data/tombstones:/tombstones
 
 # Releasetools
-TARGET_RELEASETOOLS_EXTENSIONS := ./device/samsung/galaxys2-common
+TARGET_RELEASETOOLS_EXTENSIONS := $(COMMON_PATH)
 
 # Hardware tunables
 BOARD_HARDWARE_CLASS := hardware/samsung/lineagehw \
