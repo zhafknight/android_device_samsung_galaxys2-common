@@ -156,7 +156,7 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     android.hardware.gnss@1.0-impl.los20 \
     android.hardware.gnss@1.0-service.exynos4 \
-    gps.smdk4210 \
+    gps.smdk4210 
 
 # Power HAL
 PRODUCT_PACKAGES += \
