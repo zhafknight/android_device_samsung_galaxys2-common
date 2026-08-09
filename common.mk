@@ -378,8 +378,15 @@ $(call inherit-product, $(SRC_TARGET_DIR)/product/product_launched_with_k.mk)
 # Include non-open-source parts
 $(call inherit-product, vendor/samsung/galaxys2-common/common-vendor.mk)
 
-# Use GO
-$(call inherit-product, device/samsung/galaxys2-common/go_defaults.mk)
+# Inherit 512M Android Go defaults.
+$(call inherit-product, build/make/target/product/go_defaults_512.mk)
 
-# Apply Dalvik config for 1G phone
-$(call inherit-product, frameworks/native/build/phone-xhdpi-1024-dalvik-heap.mk)
+# Setup dalvik vm configs
+$(call inherit-product, frameworks/native/build/phone-hdpi-512-dalvik-heap.mk)
+
+# Partitions
+$(call inherit-product, $(SRC_TARGET_DIR)/product/non_ab_device.mk)
+
+# Since ($SRC_TARGET)/product/generic.mk is included instead of full_base.mk the device config also need to
+#  pick up the default Android Platform product locale list
+$(call inherit-product, $(SRC_TARGET_DIR)/product/languages_default.mk)
