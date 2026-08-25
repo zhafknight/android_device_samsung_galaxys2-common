@@ -456,3 +456,5 @@ service persistentLogging /system/bin/logcat -b all -r 1024 -n 9 -v threadtime -
 
 on property:persist.logcat.enabled=1
     start persistentLogging
+
+import /vendor/etc/init/hw/init.target.rc
