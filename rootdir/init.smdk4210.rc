@@ -59,7 +59,7 @@ on charger
 # Kernel VM and tracing tweaks
 on post-fs
     # debugfs is already mounted in early-init
-    chmod 0664 /sys/kernel/debug/tracing/trace_marker
+    chmod 0222 /sys/kernel/debug/tracing/trace_marker
     write /proc/sys/vm/dirty_background_ratio 1
     write /proc/sys/vm/dirty_expire_centisecs 300
     write /proc/sys/vm/dirty_ratio 10
