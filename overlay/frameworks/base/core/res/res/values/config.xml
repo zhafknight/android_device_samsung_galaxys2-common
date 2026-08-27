@@ -152,6 +152,11 @@
          off features. -->
     <bool name="config_avoidGfxAccel">true</bool>
 
+   <!--Cap the largest legacy LMK bucket at 144 MiB.  ProcessList scales the
+        smaller buckets proportionally before passing them to lmkd/kernel LMK.
+        Default is 180 MiB, which is too aggressive for this 1 GB device. -->
+    <integer name="config_lowMemoryKillerMinFreeKbytesAbsolute">147456</integer>
+
     <!-- Is the notification LED intrusive? Used to decide if there should be a disable option -->
     <bool name="config_intrusiveNotificationLed">true</bool>
 
