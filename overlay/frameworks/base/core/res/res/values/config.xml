@@ -454,10 +454,31 @@
     <!-- If not zero, limits the internal screen recorder's framerate to the set value. -->
     <integer name="config_screenRecorderMaxFramerate">30</integer>
 
+       <!-- Whether WM DisplayContent supports high performance transitions
+         (lower-end devices may want to disable) -->
+    <bool name="config_deviceSupportsHighPerfTransitions">false</bool>
+
+    <!-- Indicates whether the device supports bubble notifications or not. -->
+    <bool name="config_supportsBubble">false</bool>
+
+    <!-- Whether this device prefers to show snapshot or splash screen on back predict target.
+         When set true, there will create windowless starting surface for the preview target, so it
+         won't affect activity's lifecycle. This should only be disabled on low-ram device. -->
+    <bool name="config_predictShowStartingSurface">false</bool>
+
+      <!-- Whether to use window background blur for the volume dialog. -->
+    <bool name="config_volumeDialogUseBackgroundBlur">false</bool>
+
+    <!-- Whether to show the side fps hint while on bouncer -->
+    <bool name="config_show_sidefps_hint_on_bouncer">false</bool>
+
+    <!-- Flag to turn on the rendering of the above path or not -->
+    <bool name="config_enableDisplayCutoutProtection">false</bool>
+
     <!-- The default value for transition animation scale found in developer settings.
          1.0 corresponds to 1x animator scale, 0 means that there will be no transition
          animations. Note that this is only a default and will be overridden by a
          user-set value if toggled by settings so the "Transition animation scale" setting
          should also be hidden if intended to be permanent. -->
-    <item name="config_appTransitionAnimationDurationScaleDefault" format="float" type="dimen">1.0</item>
+    <item name="config_appTransitionAnimationDurationScaleDefault" format="float" type="dimen">0.5</item>
 </resources>
