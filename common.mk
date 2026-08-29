@@ -39,9 +39,6 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     SystemUIGo
 
-PRODUCT_DEXPREOPT_SPEED_APPS += \
-    SystemUIGo
-
 # LineageOS PDF reader
 PRODUCT_PACKAGES += \
     Camelot
