@@ -283,6 +283,23 @@ PRODUCT_PROPERTY_OVERRIDES += \
     ro.bq.gpu_to_cpu_unsupported=1 \
     debug.hwui.render_dirty_regions=false
 
+# SurfaceFlinger
+PRODUCT_PROPERTY_OVERRIDES += \
+    ro.surface_flinger.enable_frame_rate_override=false \
+    ro.surface_flinger.supports_background_blur=false \
+    ro.surface_flinger.use_context_priority=false \
+    ro.surface_flinger.max_frame_buffer_acquired_buffers=3 \
+    ro.surface_flinger.has_wide_color_display=false \
+    ro.surface_flinger.running_without_sync_framework=false \
+    ro.surface_flinger.has_HDR_display=false \
+    ro.surface_flinger.present_time_offset_from_vsync_ns=0 \
+    ro.surface_flinger.force_hwc_copy_for_virtual_displays=false \
+    ro.surface_flinger.max_virtual_display_dimension=0 \
+    ro.surface_flinger.use_vr_flinger=false \
+    ro.surface_flinger.start_graphics_allocator_service=true \
+    ro.surface_flinger.primary_display_orientation=ORIENTATION_0 \
+    ro.surface_flinger.clear_slots_with_set_layer_buffer=true
+
 # RIL
 PRODUCT_PACKAGES += \
     android.hardware.radio.config@1.0-service
