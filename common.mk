@@ -281,7 +281,11 @@ PRODUCT_PROPERTY_OVERRIDES += \
     ro.opengles.version=131072 \
     ro.zygote.disable_gl_preload=true \
     ro.bq.gpu_to_cpu_unsupported=1 \
-    debug.hwui.render_dirty_regions=false
+    debug.hwui.render_dirty_regions=false \
+    ro.launcher.blur.appLaunch=0 \
+    debug.sf.enable_gl_backpressure=1 \
+    debug.sf.auto_latch_unsignaled=false \
+    debug.sf.hw=0
 
 # SurfaceFlinger
 PRODUCT_PROPERTY_OVERRIDES += \
