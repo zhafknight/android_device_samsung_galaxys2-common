@@ -475,6 +475,30 @@
     <!-- Flag to turn on the rendering of the above path or not -->
     <bool name="config_enableDisplayCutoutProtection">false</bool>
 
+     <!-- Disable some features for low end devices -->
+
+     <!-- Disable Safety Center -->
+     <bool name="config_enableSafetyCenter">false</bool>
+
+     <!-- Disable dreams/Screensaver -->
+    <bool name="config_dreamsSupported">false</bool>
+    <bool name="config_dreamsEnabledByDefault">false</bool>
+    <bool name="config_dreamsActivatedOnDockByDefault">false</bool>
+    <bool name="config_dreamsActivatedOnSleepByDefault">false</bool>
+    <bool name="config_dreamsActivatedOnPosturedByDefault">false</bool>
+
+     <!-- Disable desktop mode -->
+    <bool name="config_isDesktopModeSupported">false</bool>
+    <bool name="config_isDesktopModeDevOptionSupported">false</bool>
+    <bool name="config_enableDesktopFeatureSet">false</bool>
+
+    <!-- Rounded corner radius -->
+    <dimen name="rounded_corner_radius_top">0dp</dimen>
+    <dimen name="rounded_corner_radius_bottom">0dp</dimen>
+    <string name="config_mainBuiltInDisplayCutout"></string>
+    <bool name="config_fillMainBuiltInDisplayCutout">false</bool>
+    <bool name="config_maskMainBuiltInDisplayCutout">false</bool>
+
     <!-- The default value for transition animation scale found in developer settings.
          1.0 corresponds to 1x animator scale, 0 means that there will be no transition
          animations. Note that this is only a default and will be overridden by a
