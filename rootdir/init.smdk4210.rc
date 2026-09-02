@@ -1,6 +1,10 @@
 import /vendor/etc/init/hw/init.smdk4210.usb.rc
 
 on early-init
+    # Mount /metadata as tmpfs for aconfigd
+    mount tmpfs tmpfs /metadata nodev noexec nosuid mode=0755,uid=0,gid=0
+    restorecon /metadata
+
     # Mount debugfs early so tracing nodes exist before post-fs
     mount debugfs debugfs /sys/kernel/debug
 
