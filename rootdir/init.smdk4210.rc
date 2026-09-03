@@ -4,6 +4,9 @@ on early-init
     # Mount debugfs early so tracing nodes exist before post-fs
     mount debugfs debugfs /sys/kernel/debug
 
+    # Ensure the metadata bind mount point exists before the root filesystem becomes read-only
+    mkdir /metadata 0775 root system
+
     chown system system /sys/class/sec/sec_touchkey/keypad_enable
     chmod 0664 /sys/class/sec/sec_touchkey/keypad_enable
 
@@ -34,6 +37,12 @@ on early-fs
 
 on fs
     mount_all /vendor/etc/fstab.smdk4210
+
+    # Back the entire metadata hierarchy with userdata because this device has no metadata partition
+    mkdir /data/metadata 0775 root system
+    mount none /data/metadata /metadata bind
+    restorecon_recursive /metadata
+
     swapon_all /vendor/etc/fstab.smdk4210
 
     mkdir /efs/bluetooth
@@ -47,6 +56,10 @@ on fs
     mkdir /data/misc/radio 0775 radio system
     mkdir /data/radio 0770 radio radio
     chmod 0770 /data/misc/wifi 
+
+on zygote-start
+    # Restore metadata labels after the recursive userdata relabel in post-fs-data
+    restorecon_recursive /metadata
 
 on charger
 
