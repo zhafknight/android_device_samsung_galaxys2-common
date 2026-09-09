@@ -1,15 +1,18 @@
-#define LOG_TAG "N7000Camera3"
+#define LOG_TAG "Camera3"
+
+#include <log/log.h>
 
 #include "Metadata.h"
+#include "SecFimc.h"
+#include "exynos_camera_backend.h"
+#include "gralloc_priv.h"
 
-#include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <hardware/camera.h>
 #include <hardware/camera3.h>
 #include <hardware/gralloc.h>
 #include <hardware/hardware.h>
-#include <log/log.h>
 #include <android/sync.h>
 #include <system/camera_metadata.h>
 #include <system/graphics.h>
@@ -37,16 +40,33 @@
 #include <vector>
 
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <unistd.h>
 
 #ifndef GRALLOC_USAGE_HW_VIDEO_ENCODER
 #define GRALLOC_USAGE_HW_VIDEO_ENCODER 0x00010000U
 #endif
 
-namespace n7000::camera3 {
+namespace camera3 {
 namespace {
 
 constexpr int kMaxCameras = 2;
+constexpr int kAndroidPriorityUrgentDisplay = -8;
+
+bool isNativeHdRecordingSize(uint32_t width, uint32_t height) {
+    return (width == 1280 && height == 720) ||
+           (width == 1920 && height == 1080);
+}
+
+void setNativeCameraThreadPriority(const char* role, int priority) {
+    errno = 0;
+    if (setpriority(PRIO_PROCESS, 0, priority) != 0) {
+        ALOGW("Could not set %s thread priority to %d: %s",
+              role, priority, strerror(errno));
+        return;
+    }
+    ALOGI("Using Android priority %d for %s thread", priority, role);
+}
 
 class ScopedReconfigure {
 public:
@@ -74,110 +94,20 @@ private:
     bool success_ = false;
 };
 
-constexpr const char* kFallbackBlobPaths[] = {
-        "/vendor/lib/hw/camera.smdk4210-hal1.so",
-        "/system/vendor/lib/hw/camera.smdk4210-hal1.so",
-        "/vendor/lib/hw/camera.exynos4.so",
-        "/system/lib/hw/camera.exynos4.so",
-};
 
-class LegacyModule {
-public:
-    static LegacyModule& get() {
-        static LegacyModule instance;
-        return instance;
-    }
-
-    bool ensureLoaded() {
-        std::lock_guard<std::mutex> lock(mutex_);
-        if (module_ != nullptr) {
-            return true;
-        }
-
-        for (const char* candidate : kFallbackBlobPaths) {
-            const std::string path(candidate);
-            void* handle = dlopen(path.c_str(), RTLD_NOW | RTLD_LOCAL);
-            if (handle == nullptr) {
-                ALOGW("dlopen(%s) failed: %s", path.c_str(), dlerror());
-                continue;
-            }
-            auto* module = reinterpret_cast<camera_module_t*>(
-                    dlsym(handle, HAL_MODULE_INFO_SYM_AS_STR));
-            if (module == nullptr) {
-                ALOGE("%s does not export %s", path.c_str(), HAL_MODULE_INFO_SYM_AS_STR);
-                dlclose(handle);
-                continue;
-            }
-            if (module->common.id == nullptr ||
-                strcmp(module->common.id, CAMERA_HARDWARE_MODULE_ID) != 0) {
-                ALOGE("%s exports an invalid camera module", path.c_str());
-                dlclose(handle);
-                continue;
-            }
-            handle_ = handle;
-            module_ = module;
-            path_ = path;
-            ALOGI("N7000 HAL3-on-HAL1 build 20260803-front-video-fps-v3");
-            ALOGI("Loaded HAL1 camera module from %s, module API 0x%x", path.c_str(),
-                  module_->common.module_api_version);
-            return true;
-        }
-        ALOGE("No usable HAL1 camera module found");
-        return false;
-    }
-
-    int cameraCount() {
-        if (!ensureLoaded() || module_->get_number_of_cameras == nullptr) {
-            return 0;
-        }
-        return std::clamp(module_->get_number_of_cameras(), 0, kMaxCameras);
-    }
-
-    int cameraInfo(int id, camera_info* info) {
-        if (!ensureLoaded() || module_->get_camera_info == nullptr) {
-            return -ENODEV;
-        }
-        return module_->get_camera_info(id, info);
-    }
-
-    int openCamera(int id, camera_device_t** device) {
-        if (!ensureLoaded() || module_->common.methods == nullptr ||
-            module_->common.methods->open == nullptr || device == nullptr) {
-            return -ENODEV;
-        }
-        std::string idString = std::to_string(id);
-        hw_device_t* hwDevice = nullptr;
-        const int rc = module_->common.methods->open(&module_->common, idString.c_str(), &hwDevice);
-        if (rc != 0 || hwDevice == nullptr) {
-            ALOGE("HAL1 open camera %d failed: %d", id, rc);
-            return rc != 0 ? rc : -ENODEV;
-        }
-        *device = reinterpret_cast<camera_device_t*>(hwDevice);
-        return 0;
-    }
-
-    const std::string& path() const { return path_; }
-
-private:
-    std::mutex mutex_;
-    void* handle_ = nullptr;
-    camera_module_t* module_ = nullptr;
-    std::string path_;
-};
-
-struct LegacyMemory {
+struct BackendMemory {
     camera_memory_t camera{};
     void* allocation = nullptr;
     size_t allocationSize = 0;
     bool mapped = false;
 };
 
-void releaseLegacyMemory(camera_memory_t* memory) {
+void releaseBackendMemory(camera_memory_t* memory) {
     if (memory == nullptr) {
         return;
     }
-    auto* holder = reinterpret_cast<LegacyMemory*>(
-            reinterpret_cast<uint8_t*>(memory) - offsetof(LegacyMemory, camera));
+    auto* holder = reinterpret_cast<BackendMemory*>(
+            reinterpret_cast<uint8_t*>(memory) - offsetof(BackendMemory, camera));
     if (holder->allocation != nullptr) {
         if (holder->mapped) {
             munmap(holder->allocation, holder->allocationSize);
@@ -188,13 +118,13 @@ void releaseLegacyMemory(camera_memory_t* memory) {
     delete holder;
 }
 
-camera_memory_t* requestLegacyMemory(int fd, size_t bufferSize, unsigned int bufferCount,
+camera_memory_t* requestBackendMemory(int fd, size_t bufferSize, unsigned int bufferCount,
                                      void*) {
     if (bufferSize == 0 || bufferCount == 0 || bufferSize > SIZE_MAX / bufferCount) {
         return nullptr;
     }
     const size_t totalSize = bufferSize * bufferCount;
-    auto* holder = new (std::nothrow) LegacyMemory();
+    auto* holder = new (std::nothrow) BackendMemory();
     if (holder == nullptr) {
         return nullptr;
     }
@@ -219,7 +149,7 @@ camera_memory_t* requestLegacyMemory(int fd, size_t bufferSize, unsigned int buf
     holder->camera.data = holder->allocation;
     holder->camera.size = totalSize;
     holder->camera.handle = holder;
-    holder->camera.release = releaseLegacyMemory;
+    holder->camera.release = releaseBackendMemory;
     return &holder->camera;
 }
 
@@ -288,9 +218,7 @@ std::array<int32_t, 4> resolveCropRegion(const camera_metadata_t* settings, int 
         return fullCrop;
     }
 
-    // HAL1 exposes a center-only integer zoom table. Convert the Camera2 crop
-    // width to the nearest exact N7000 zoom ratio, following the useful part
-    // of acroreiser's HAL3on1 approach without mutating framework streams.
+    // Based on acroreiser's HAL3on1 zoom approach.
     const int32_t requestedWidth =
             std::clamp(cropEntry.data.i32[2], 1, descriptor.maxWidth);
     const int32_t requestedRatio = std::clamp(
@@ -363,18 +291,18 @@ struct PendingFrame {
     std::optional<camera3_stream_buffer_t> videoBuffer;
     std::optional<camera3_stream_buffer_t> analysisBuffer;
     std::optional<camera3_stream_buffer_t> jpegBuffer;
+    std::string jpegParameters;
     bool metadataReturned = false;
     bool requestErrorNotified = false;
 };
 
 void notifyTorchStatus(int status);
 
-class Camera3Shim {
+class NativeCamera3Device {
 public:
-    explicit Camera3Shim(int id) : id_(id) {
+    explicit NativeCamera3Device(int id) : id_(id) {
         memset(&device_, 0, sizeof(device_));
         memset(&ops_, 0, sizeof(ops_));
-        memset(&previewWindow_, 0, sizeof(previewWindow_));
 
         device_.common.tag = HARDWARE_DEVICE_TAG;
         device_.common.version = CAMERA_DEVICE_API_VERSION_3_2;
@@ -391,19 +319,6 @@ public:
         ops_.dump = dumpDevice;
         ops_.flush = flushDevice;
 
-        previewWindow_.owner = this;
-        previewWindow_.ops.dequeue_buffer = previewDequeueBuffer;
-        previewWindow_.ops.enqueue_buffer = previewEnqueueBuffer;
-        previewWindow_.ops.cancel_buffer = previewCancelBuffer;
-        previewWindow_.ops.set_buffer_count = previewSetBufferCount;
-        previewWindow_.ops.set_buffers_geometry = previewSetBuffersGeometry;
-        previewWindow_.ops.set_crop = previewSetCrop;
-        previewWindow_.ops.set_usage = previewSetUsage;
-        previewWindow_.ops.set_swap_interval = previewSetSwapInterval;
-        previewWindow_.ops.get_min_undequeued_buffer_count = previewGetMinUndequeuedCount;
-        previewWindow_.ops.lock_buffer = previewLockBuffer;
-        previewWindow_.ops.set_timestamp = previewSetTimestamp;
-
         const hw_module_t* grallocModule = nullptr;
         if (hw_get_module(GRALLOC_HARDWARE_MODULE_ID, &grallocModule) == 0) {
             gralloc_ = reinterpret_cast<const gralloc_module_t*>(grallocModule);
@@ -414,11 +329,16 @@ public:
             }
         }
 
-        worker_ = std::thread(&Camera3Shim::workerLoop, this);
+        worker_ = std::thread(&NativeCamera3Device::workerLoop, this);
+        resultWorker_ = std::thread(&NativeCamera3Device::resultLoop, this);
+        previewScalerWorker_ = std::thread(&NativeCamera3Device::previewScalerLoop, this);
+        videoBlitWorker_ = std::thread(&NativeCamera3Device::videoBlitLoop, this);
     }
 
-    ~Camera3Shim() {
+    ~NativeCamera3Device() {
         closeInternal();
+        stopVideoBlitWorker();
+        stopPreviewScaler();
         releaseScratchPreviewBuffers();
         releaseDrainPreviewBuffer();
         if (grallocAlloc_ != nullptr) {
@@ -437,9 +357,10 @@ public:
 
     camera3_device_t* device() { return &device_; }
 
-    int openLegacy() {
-        const int rc = LegacyModule::get().openCamera(id_, &legacyDevice_);
-        if (rc != 0 || legacyDevice_ == nullptr || legacyDevice_->ops == nullptr) {
+    int openBackend() {
+        const int rc = exynos_camera_backend_open(id_, &backend_);
+        if (rc != 0 || backend_ == nullptr) {
+            ALOGE("Native Exynos backend open camera %d failed: %d", id_, rc);
             return rc != 0 ? rc : -ENODEV;
         }
         return 0;
@@ -453,11 +374,6 @@ private:
         uint32_t generation;
     };
 
-    struct PreviewWindow {
-        preview_stream_ops_t ops;
-        Camera3Shim* owner;
-    };
-
     struct ScratchPreviewBuffer {
         buffer_handle_t handle = nullptr;
         int stride = 0;
@@ -466,14 +382,35 @@ private:
         bool inUse = false;
     };
 
-    static constexpr size_t kScratchPreviewBufferCount = 4;
+    struct NativeResultJob {
+        std::shared_ptr<PendingFrame> frame;
+        std::array<camera3_stream_buffer_t, 3> buffers{};
+        uint32_t bufferCount = 0;
+        bool sendShutter = false;
+        bool includeMetadata = false;
+    };
 
-    static Camera3Shim* from(const camera3_device_t* device) {
-        return device == nullptr ? nullptr : static_cast<Camera3Shim*>(device->priv);
-    }
+    struct NativeVideoBlitJob {
+        std::shared_ptr<PendingFrame> frame;
+        const void* source = nullptr;
+        size_t sourceSize = 0;
+        uint32_t sourceYAddr = 0;
+        uint32_t sourceCbcrAddr = 0;
+        int width = 0;
+        int height = 0;
+        camera3_stream_buffer_t* target = nullptr;
+        uint64_t sequence = 0;
+    };
 
-    static PreviewWindow* from(preview_stream_ops_t* window) {
-        return reinterpret_cast<PreviewWindow*>(window);
+    // The legacy preview window is strictly serial: it dequeues one target,
+    // copies one V4L2 frame, and enqueues that target before requesting the
+    // next. One scratch target is therefore sufficient. Keeping four 720p
+    // scratch allocations consumed about 4 MiB extra contiguous memory and
+    // left the V4L2 driver with only its minimum three capture buffers.
+    static constexpr size_t kScratchPreviewBufferCount = 1;
+
+    static NativeCamera3Device* from(const camera3_device_t* device) {
+        return device == nullptr ? nullptr : static_cast<NativeCamera3Device*>(device->priv);
     }
 
     static int closeDevice(hw_device_t* device) {
@@ -487,71 +424,65 @@ private:
 
     static int initializeDevice(const camera3_device_t* device,
                                 const camera3_callback_ops_t* callbacks) {
-        Camera3Shim* self = from(device);
+        NativeCamera3Device* self = from(device);
         return self == nullptr ? -EINVAL : self->initialize(callbacks);
     }
 
     static int configureStreamsDevice(const camera3_device_t* device,
                                       camera3_stream_configuration_t* streams) {
-        Camera3Shim* self = from(device);
+        NativeCamera3Device* self = from(device);
         return self == nullptr ? -EINVAL : self->configureStreams(streams);
     }
 
     static const camera_metadata_t* constructDefaultRequestSettingsDevice(
             const camera3_device_t* device, int type) {
-        Camera3Shim* self = from(device);
+        NativeCamera3Device* self = from(device);
         return self == nullptr ? nullptr : self->constructDefaultRequestSettings(type);
     }
 
     static int processCaptureRequestDevice(const camera3_device_t* device,
                                            camera3_capture_request_t* request) {
-        Camera3Shim* self = from(device);
+        NativeCamera3Device* self = from(device);
         return self == nullptr ? -EINVAL : self->processCaptureRequest(request);
     }
 
     static void dumpDevice(const camera3_device_t* device, int fd) {
-        Camera3Shim* self = from(device);
+        NativeCamera3Device* self = from(device);
         if (self != nullptr) {
             self->dump(fd);
         }
     }
 
     static int flushDevice(const camera3_device_t* device) {
-        Camera3Shim* self = from(device);
+        NativeCamera3Device* self = from(device);
         return self == nullptr ? -EINVAL : self->flush();
     }
 
     int initialize(const camera3_callback_ops_t* callbacks) {
         if (callbacks == nullptr || callbacks->notify == nullptr ||
-            callbacks->process_capture_result == nullptr || legacyDevice_ == nullptr ||
-            legacyDevice_->ops == nullptr || legacyDevice_->ops->set_callbacks == nullptr ||
-            legacyDevice_->ops->set_preview_window == nullptr ||
-            legacyDevice_->ops->enable_msg_type == nullptr) {
+            callbacks->process_capture_result == nullptr || backend_ == nullptr) {
             return -EINVAL;
         }
         callbacks_ = callbacks;
-        legacyDevice_->ops->set_callbacks(legacyDevice_, legacyNotifyCallback,
-                                          legacyDataCallback, legacyTimestampCallback,
-                                          requestLegacyMemory, this);
-        const int rc = legacyDevice_->ops->set_preview_window(
-                legacyDevice_, &previewWindow_.ops);
-        if (rc != 0) {
-            ALOGE("set_preview_window failed: %d", rc);
-            callbacks_ = nullptr;
-            return rc;
-        }
-        legacyDevice_->ops->enable_msg_type(
-                legacyDevice_, CAMERA_MSG_ERROR | CAMERA_MSG_FOCUS |
-                               CAMERA_MSG_SHUTTER | CAMERA_MSG_COMPRESSED_IMAGE);
+        exynos_camera_backend_set_callbacks(backend_, backendNotifyCallback,
+                                            backendDataCallback, backendTimestampCallback,
+                                            requestBackendMemory, this);
+        exynos_camera_backend_set_frame_callback(backend_, backendFrameCallback, this);
+        ALOGI("Direct V4L2-to-Camera3 frame delivery enabled");
+        ALOGI("Asynchronous FIFO Camera3 result delivery enabled");
+        exynos_camera_backend_enable_messages(
+                backend_, CAMERA_MSG_ERROR | CAMERA_MSG_FOCUS |
+                          CAMERA_MSG_SHUTTER | CAMERA_MSG_COMPRESSED_IMAGE);
         initialized_ = true;
         return 0;
     }
 
     bool supportedPreviewSize(int width, int height) const {
         const std::vector<std::pair<int, int>> sizes = id_ == 0
-                ? std::vector<std::pair<int, int>>{{1280, 720}, {800, 480}, {720, 480},
-                                                   {640, 480}, {352, 288}, {320, 240},
-                                                   {176, 144}}
+                ? std::vector<std::pair<int, int>>{{1920, 1080}, {1280, 720},
+                                                   {800, 480}, {720, 480}, {640, 480},
+                                                   {640, 360},
+                                                   {352, 288}, {320, 240}, {176, 144}}
                 : std::vector<std::pair<int, int>>{{640, 480}, {352, 288},
                                                    {320, 240}, {176, 144}};
         return std::find(sizes.begin(), sizes.end(), std::make_pair(width, height)) != sizes.end();
@@ -571,6 +502,8 @@ private:
             configuration->streams == nullptr) {
             return -EINVAL;
         }
+        const bool hadConfiguredNonVideoSession = configured_ && videoStream_ == nullptr;
+
         // Keep process_capture_request() from racing an old repeating request
         // against a new set of stream pointers. CameraX can submit one last
         // request while the previous session is being flushed.
@@ -600,7 +533,7 @@ private:
                 jpeg = stream;
                 stream->max_buffers = 1;
                 // Preserve the legacy stream negotiation used by the
-                // previously working N7000 Camera3 wrapper.
+                // previously working Camera3 wrapper.
                 stream->usage |= GRALLOC_USAGE_SW_WRITE_OFTEN;
                 continue;
             }
@@ -624,7 +557,8 @@ private:
             }
 
             if (stream->format != HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED &&
-                stream->format != HAL_PIXEL_FORMAT_YCrCb_420_SP) {
+                stream->format != HAL_PIXEL_FORMAT_YCrCb_420_SP &&
+                stream->format != HAL_PIXEL_FORMAT_YCbCr_420_SP) {
                 return -EINVAL;
             }
             if (!supportedPreviewSize(stream->width, stream->height)) {
@@ -649,48 +583,80 @@ private:
             } else {
                 return -EINVAL;
             }
+            const bool nativeVideoStream = video == stream;
 
             if (stream->format == HAL_PIXEL_FORMAT_IMPLEMENTATION_DEFINED) {
-                // Restore the exact device-side negotiation used by the
-                // previously working wrapper. No gralloc modification is
-                // required: the legacy provider accepts an NV21 override for
-                // an IMPLEMENTATION_DEFINED output stream.
-                ALOGI("Device-only stream override %s: IMPLEMENTATION_DEFINED -> NV21 "
-                      "%ux%u inputUsage=0x%llx",
-                      encoderStream ? "video" : "preview",
+                // Preview remains in the sensor-native NV21 layout. Recording
+                // uses linear NV12, which is the native MFC input layout; FIMC
+                // performs the NV21-to-NV12 conversion in hardware. HIDL
+                // Camera3 explicitly permits a concrete format override when
+                // the requested format is IMPLEMENTATION_DEFINED. It is also
+                // mandatory here: the old Exynos4 EGL importer aborts when it
+                // receives format 0x22, as seen in cam18.
+                const int nativeFormat = nativeVideoStream
+                        ? HAL_PIXEL_FORMAT_YCbCr_420_SP
+                        : HAL_PIXEL_FORMAT_YCrCb_420_SP;
+                ALOGI("Device-only stream override %s: "
+                      "IMPLEMENTATION_DEFINED -> %s %ux%u inputUsage=0x%llx",
+                      nativeVideoStream ? "video" : "preview",
+                      nativeVideoStream ? "NV12" : "NV21",
                       stream->width, stream->height,
                       static_cast<unsigned long long>(stream->usage));
-                stream->format = HAL_PIXEL_FORMAT_YCrCb_420_SP;
+                stream->format = nativeFormat;
             }
-            stream->usage |= GRALLOC_USAGE_SW_READ_OFTEN |
-                             GRALLOC_USAGE_SW_WRITE_OFTEN |
-                             GRALLOC_USAGE_HW_CAMERA_WRITE;
+            if (nativeVideoStream) {
+                // FIMC1 writes an MFC-aligned contiguous NV12 surface and the
+                // hardware encoder consumes its physical planes directly.
+                // No CPU agent owns the recording stream.
+                stream->usage |= GRALLOC_USAGE_HW_CAMERA_WRITE |
+                                 GRALLOC_USAGE_HW_VIDEO_ENCODER;
+                stream->usage &= ~(GRALLOC_USAGE_SW_READ_MASK |
+                                   GRALLOC_USAGE_SW_WRITE_MASK);
+            } else {
+                stream->usage |= GRALLOC_USAGE_SW_READ_OFTEN |
+                                 GRALLOC_USAGE_SW_WRITE_OFTEN |
+                                 GRALLOC_USAGE_HW_CAMERA_WRITE;
+            }
             ALOGI("Device-only configured %s stream: format=0x%x usage=0x%llx "
                   "size=%ux%u",
-                  encoderStream ? "video" : "preview", stream->format,
+                  nativeVideoStream ? "video" : "preview", stream->format,
                   static_cast<unsigned long long>(stream->usage),
                   stream->width, stream->height);
-            // CameraX keeps several preview/video buffers in flight. Two
-            // buffers starve the recording pipeline before HAL1 can return the
-            // first frame, so retain the working four-buffer depth here.
-            stream->max_buffers = 4;
+            if (nativeVideoStream) {
+                stream->max_buffers = stream->width == 1920 && stream->height == 1080
+                        ? 4 : 6;
+            } else {
+                stream->max_buffers = 8;
+            }
         }
 
         if (preview == nullptr && video == nullptr && analysis == nullptr &&
             jpeg == nullptr) {
             return -EINVAL;
         }
+
+        if (hadConfiguredNonVideoSession && video != nullptr) {
+            std::lock_guard<std::mutex> lock(backendOpsMutex_);
+            const int resetRc = exynos_camera_backend_reset_capture_nodes(backend_);
+            if (resetRc != 0) {
+                ALOGE("Could not reset native capture route for photo-to-video: %d",
+                      resetRc);
+                return resetRc;
+            }
+        }
         bool useVideoAsSource = false;
         if (preview != nullptr && video != nullptr &&
             (preview->width != video->width || preview->height != video->height)) {
-            // CameraX pairs a 640x480 display preview with a 1280x720 encoder
-            // surface for HD recording. HAL1 can only produce one preview size,
-            // so use the 720p video buffer as the real source and derive the
-            // smaller preview with a bounded NV21 center-crop/downscale.
-            if (id_ == 0 && preview->width == 640 && preview->height == 480 &&
-                video->width == 1280 && video->height == 720) {
-                useVideoAsSource = true;
-                ALOGI("Using video 1280x720 as HAL1 source; deriving preview 640x480");
+            // CameraX normally pairs a display-sized preview with a 1280x720
+            // or 1920x1080 encoder surface. The Exynos4 camera pipeline has
+            // two native capture nodes for this layout: FIMC0 scales the M5MO
+            // monitor feed to preview while FIMC2 retains the full recording
+            // size. Accept every advertised preview which is no larger than
+            // that feed; no CPU bridge is involved.
+            if (id_ == 0 && isNativeHdRecordingSize(video->width, video->height) &&
+                preview->width <= video->width && preview->height <= video->height) {
+                ALOGI("Using native dual Exynos streams: preview %ux%u + video %ux%u",
+                      preview->width, preview->height, video->width, video->height);
             } else {
                 ALOGE("Unsupported preview/video bridge pair: %ux%u + %ux%u",
                       preview->width, preview->height, video->width, video->height);
@@ -722,24 +688,68 @@ private:
         previewStream_ = preview;
         videoStream_ = video;
         analysisStream_ = analysis;
-        sourceStream_ = useVideoAsSource
-                ? video
-                : (preview != nullptr ? preview : video);
+        sourceStream_ = preview != nullptr ? preview : analysis;
         if (sourceStream_ == nullptr) {
-            sourceStream_ = analysis;
+            sourceStream_ = video;
         }
         jpegStream_ = jpeg;
         previewWidth_ = sourceStream_ != nullptr ? sourceStream_->width : 0;
         previewHeight_ = sourceStream_ != nullptr ? sourceStream_->height : 0;
         videoWidth_ = video != nullptr ? video->width : 0;
         videoHeight_ = video != nullptr ? video->height : 0;
+        nativeVideoWidth_ = videoWidth_;
+        nativeVideoHeight_ = videoHeight_;
+        if (id_ == 0 && videoWidth_ == 1280 && videoHeight_ == 720) {
+            nativeVideoWidth_ = 1072;
+            nativeVideoHeight_ = 800;
+            ALOGI("Full-FOV 720p path: M5MO 1072x800 -> "
+                  "960x720 content in 1280x720 encoder stream");
+        }
+        nativePreviewWidth_ = previewWidth_;
+        nativePreviewHeight_ = previewHeight_;
+        if (id_ == 0 && video != nullptr && previewWidth_ == 640 &&
+            previewHeight_ == 480 && videoWidth_ * 9 == videoHeight_ * 16 &&
+            !(videoWidth_ == 1280 && videoHeight_ == 720)) {
+            nativePreviewHeight_ = 360;
+            ALOGI("Aspect-correct native preview path: M5MO 16:9 -> "
+                  "%dx%d content in %dx%d Camera3 stream",
+                  nativePreviewWidth_, nativePreviewHeight_,
+                  previewWidth_, previewHeight_);
+        }
         analysisWidth_ = analysis != nullptr ? analysis->width : 0;
         analysisHeight_ = analysis != nullptr ? analysis->height : 0;
         jpegWidth_ = jpeg != nullptr ? jpeg->width : 0;
         jpegHeight_ = jpeg != nullptr ? jpeg->height : 0;
         useVideoAsSource_ = useVideoAsSource;
+        nativeFrameWindowStartNs_ = 0;
+        nativeFrameCount_ = 0;
+        nativeFrameProcessingNs_ = 0;
+        nativeDequeueWaitNs_ = 0;
+        nativePreviewCopyNs_ = 0;
+        nativeResultDeliveryNs_ = 0;
+        nativeResultDeliveryCount_ = 0;
+        nativeShutterDeliveryNs_ = 0;
+        nativeShutterDeliveryCount_ = 0;
+        previewBlitterUnavailable_ = false;
+        previewLetterboxBuffers_.clear();
+        videoPillarboxBuffers_.clear();
+        previewDmaCount_ = 0;
+        previewCpuCopyCount_ = 0;
+        videoBlitCount_ = 0;
+        videoFenceWaitNs_ = 0;
+        videoBlitProcessingNs_ = 0;
+        resetPreviewScaler(sessionGeneration_.load());
+        if (videoStream_ != nullptr && previewStream_ != nullptr &&
+            isNativeHdRecordingSize(videoStream_->width, videoStream_->height) &&
+            previewStream_->width <= videoStream_->width &&
+            previewStream_->height <= videoStream_->height) {
+            ALOGI("Native node0/node2 recording path enabled: preview %ux%u, "
+                  "video %ux%u; parallel FIMC1/FIMC3 DMA",
+                  previewStream_->width, previewStream_->height,
+                  videoStream_->width, videoStream_->height);
+        }
 
-        // The Exynos HAL1 preview loop does not check dequeue_buffer()'s
+        // The Exynos V4L2 preview loop does not check dequeue_buffer()'s
         // return value. Keep one valid internal NV21 buffer available so a
         // flush or still-capture transition can wake that loop safely.
         if (sourceStream_ != nullptr) {
@@ -751,11 +761,15 @@ private:
             }
         }
 
-        // Internal source buffers are required when the configured HAL1 source
+        // Internal source buffers are required when the configured V4L2 source
         // is not present in an individual request (for example a preview-only
         // request in a preview+HD-video session, or an ImageAnalysis-only
-        // request). HAL1 still needs a real NV21 destination for that frame.
-        if (useVideoAsSource_ || analysisStream_ != nullptr) {
+        // request). The capture engine still needs an NV21 destination.
+        if ((videoStream_ != nullptr && previewStream_ != nullptr &&
+             (videoStream_->width != previewStream_->width ||
+              videoStream_->height != previewStream_->height)) ||
+            analysisStream_ != nullptr ||
+            (jpegStream_ != nullptr && sourceStream_ != nullptr)) {
             const int scratchRc = allocateScratchPreviewBuffers(previewWidth_, previewHeight_);
             if (scratchRc != 0) {
                 ALOGE("Could not allocate %dx%d internal preview buffers: %d",
@@ -766,12 +780,17 @@ private:
             }
         }
 
-        int rc = updateLegacyParameters(nullptr);
+        int rc = updateBackendParameters(nullptr);
         if (rc != 0) {
-            ALOGE("Initial HAL1 parameter configuration failed: %d", rc);
+            ALOGE("Initial native backend parameter configuration failed: %d", rc);
             releaseScratchPreviewBuffers();
             releaseDrainPreviewBuffer();
             return rc;
+        }
+        {
+            std::lock_guard<std::mutex> lock(backendOpsMutex_);
+            exynos_camera_backend_set_recording_stream(
+                    backend_, videoStream_ != nullptr ? 1 : 0);
         }
         haveRequestSettings_ = false;
         reconfigure.succeed();
@@ -902,13 +921,18 @@ private:
         }
 
         // A null settings pointer repeats the previous request. Reapplying the
-        // full Camera1 parameter string for every repeating frame is expensive
+        // full sensor parameter string for every frame is expensive
         // and can serialize process_capture_request() behind still capture.
-        if (request->settings != nullptr) {
-            if (updateLegacyParameters(effectiveSettings) != 0) {
-                ALOGW("Could not apply all request settings to HAL1");
+        if (request->settings != nullptr || frame->jpegBuffer.has_value()) {
+            std::string* jpegParameters = frame->jpegBuffer.has_value()
+                    ? &frame->jpegParameters
+                    : nullptr;
+            if (updateBackendParameters(effectiveSettings, jpegParameters) != 0) {
+                ALOGW("Could not apply all request settings to native backend");
             }
-            handleAfTrigger(effectiveSettings);
+            if (request->settings != nullptr) {
+                handleAfTrigger(effectiveSettings);
+            }
         }
 
         bool reserveRejected = false;
@@ -934,11 +958,19 @@ private:
             return 0;
         }
 
-        // Publish metadata before this frame becomes visible to asynchronous
-        // HAL1 workers. JPEG completion may be delayed, but metadata must remain
-        // strictly ordered by frame number.
-        sendShutter(frame->frameNumber, frame->timestamp);
-        sendMetadata(frame);
+        const bool hasRealtimeOutput = frame->previewBuffer.has_value() ||
+                frame->videoBuffer.has_value() || frame->analysisBuffer.has_value();
+        const bool needsOrderedPreviewCapture = hasRealtimeOutput ||
+                (frame->jpegBuffer.has_value() && sourceStream_ != nullptr);
+        // Every request in an active preview session, including JPEG-only, is
+        // sequenced through the native V4L2 callback. This preserves Camera3's
+        // strictly increasing shutter order when repeating preview frames were
+        // already queued ahead of a still capture. A standalone JPEG session has
+        // no preview source and therefore uses the monotonic fallback.
+        if (!needsOrderedPreviewCapture) {
+            sendShutter(frame->frameNumber, frame->timestamp);
+            sendMetadata(frame);
+        }
 
         bool startPreview = false;
         bool takePicture = false;
@@ -947,9 +979,7 @@ private:
             std::lock_guard<std::mutex> lock(stateMutex_);
             sessionChanged = closing_ || flushing_ ||
                     frame->generation != sessionGeneration_.load();
-            if (!sessionChanged &&
-                (frame->previewBuffer.has_value() || frame->videoBuffer.has_value() ||
-                 frame->analysisBuffer.has_value())) {
+            if (!sessionChanged && needsOrderedPreviewCapture) {
                 previewQueue_.push_back(frame);
                 startPreview = true;
             } else if (!sessionChanged) {
@@ -976,26 +1006,21 @@ private:
         return 0;
     }
 
-    int updateLegacyParameters(const camera_metadata_t* settings) {
-        if (legacyDevice_ == nullptr || legacyDevice_->ops == nullptr ||
-            legacyDevice_->ops->get_parameters == nullptr ||
-            legacyDevice_->ops->set_parameters == nullptr) {
+    int updateBackendParameters(const camera_metadata_t* settings,
+                                std::string* appliedParameters = nullptr) {
+        if (backend_ == nullptr) {
             return -ENODEV;
         }
-        std::lock_guard<std::mutex> lock(legacyOpsMutex_);
-        char* oldParameters = legacyDevice_->ops->get_parameters(legacyDevice_);
+        std::lock_guard<std::mutex> lock(backendOpsMutex_);
+        char* oldParameters = exynos_camera_backend_get_parameters(backend_);
         ParameterMap parameters(oldParameters);
         if (oldParameters != nullptr) {
-            if (legacyDevice_->ops->put_parameters != nullptr) {
-                legacyDevice_->ops->put_parameters(legacyDevice_, oldParameters);
-            } else {
-                free(oldParameters);
-            }
+            exynos_camera_backend_free_parameters(oldParameters);
         }
 
         if (sourceStream_ != nullptr) {
-            parameters.set("preview-size", std::to_string(previewWidth_) + "x" +
-                                           std::to_string(previewHeight_));
+            parameters.set("preview-size", std::to_string(nativePreviewWidth_) + "x" +
+                                           std::to_string(nativePreviewHeight_));
             parameters.set("preview-format", "yuv420sp");
             int minFps = id_ == 1 ? 15 : (videoStream_ != nullptr ? 30 : 15);
             int maxFps = id_ == 1 ? 15 : 30;
@@ -1019,11 +1044,15 @@ private:
         }
         if (videoStream_ != nullptr) {
             parameters.set("recording-hint", "true");
-            parameters.set("video-size", std::to_string(videoWidth_) + "x" +
-                                         std::to_string(videoHeight_));
+            parameters.set("video-size", std::to_string(nativeVideoWidth_) + "x" +
+                                         std::to_string(nativeVideoHeight_));
             parameters.set("video-frame-format", "yuv420sp");
         } else {
             parameters.set("recording-hint", "false");
+            if (sourceStream_ != nullptr) {
+                parameters.set("video-size", std::to_string(nativePreviewWidth_) + "x" +
+                                             std::to_string(nativePreviewHeight_));
+            }
         }
 
         camera_metadata_ro_entry_t entry{};
@@ -1216,11 +1245,14 @@ private:
         }
 
         const std::string flattened = parameters.flatten();
-        return legacyDevice_->ops->set_parameters(legacyDevice_, flattened.c_str());
+        if (appliedParameters != nullptr) {
+            *appliedParameters = flattened;
+        }
+        return exynos_camera_backend_set_parameters(backend_, flattened.c_str());
     }
 
     void handleAfTrigger(const camera_metadata_t* settings) {
-        if (settings == nullptr || legacyDevice_ == nullptr || id_ != 0) {
+        if (settings == nullptr || backend_ == nullptr || id_ != 0) {
             return;
         }
         camera_metadata_ro_entry_t entry{};
@@ -1228,14 +1260,12 @@ private:
             entry.count == 0) {
             return;
         }
-        std::lock_guard<std::mutex> lock(legacyOpsMutex_);
-        if (entry.data.u8[0] == ANDROID_CONTROL_AF_TRIGGER_START &&
-            legacyDevice_->ops->auto_focus != nullptr) {
+        std::lock_guard<std::mutex> lock(backendOpsMutex_);
+        if (entry.data.u8[0] == ANDROID_CONTROL_AF_TRIGGER_START) {
             afState_.store(ANDROID_CONTROL_AF_STATE_ACTIVE_SCAN);
-            legacyDevice_->ops->auto_focus(legacyDevice_);
-        } else if (entry.data.u8[0] == ANDROID_CONTROL_AF_TRIGGER_CANCEL &&
-                   legacyDevice_->ops->cancel_auto_focus != nullptr) {
-            legacyDevice_->ops->cancel_auto_focus(legacyDevice_);
+            exynos_camera_backend_auto_focus(backend_);
+        } else if (entry.data.u8[0] == ANDROID_CONTROL_AF_TRIGGER_CANCEL) {
+            exynos_camera_backend_cancel_auto_focus(backend_);
             afState_.store(ANDROID_CONTROL_AF_STATE_INACTIVE);
         }
     }
@@ -1398,13 +1428,13 @@ private:
             return false;
         }
 
-        // Flexible YUV buffers cannot be passed to the Camera1 preview window,
+        // Flexible YUV buffers cannot be passed to the V4L2 stream adapter,
         // and a request is not required to target every configured stream.
         // Supply an internal NV21 destination whenever this request does not
-        // contain a usable direct HAL1 source buffer.
+        // contain a usable direct NV21 source buffer.
         return sourceBuffer(frame) == nullptr &&
                (frame->previewBuffer.has_value() || frame->videoBuffer.has_value() ||
-                frame->analysisBuffer.has_value());
+                frame->analysisBuffer.has_value() || frame->jpegBuffer.has_value());
     }
 
     camera3_stream_buffer_t* sourceBuffer(
@@ -1417,7 +1447,7 @@ private:
                 return &*frame->videoBuffer;
             }
             // Falling back to a differently sized preview buffer would let
-            // HAL1 write 720p into a 640x480 allocation. Only permit fallback
+            // the backend write 720p into a 640x480 allocation. Only permit fallback
             // when both streams have the configured source dimensions.
             if (frame->previewBuffer.has_value() && previewStream_ != nullptr &&
                 previewStream_->width == static_cast<uint32_t>(previewWidth_) &&
@@ -1437,7 +1467,7 @@ private:
             }
             return nullptr;
         }
-        // Flexible YUV analysis buffers are never handed directly to HAL1.
+        // Flexible YUV analysis buffers are never handed directly to V4L2.
         // They are populated through lock_ycbcr() after the NV21 source frame
         // has completed.
         return nullptr;
@@ -1529,6 +1559,286 @@ private:
         gralloc_->unlock(gralloc_, *target.buffer);
         gralloc_->unlock(gralloc_, *source.buffer);
         return 0;
+    }
+
+    static void scaleHdNv21ToVga(const uint8_t* source, uint8_t* target) {
+        constexpr size_t kSourceWidth = 1280;
+        constexpr size_t kSourceHeight = 720;
+        constexpr size_t kTargetWidth = 640;
+        constexpr size_t kTargetHeight = 480;
+        constexpr size_t kCropByteX = 160;
+
+        // The 960x720 center crop scales to 640x480 by keeping two pixels
+        // from every group of three. Process two output rows at a time so the
+        // Cortex-A9 loop contains no multiplies or divides per pixel.
+        for (size_t rowPair = 0; rowPair < kTargetHeight / 2U; ++rowPair) {
+            const uint8_t* sourceRow0 = source + (rowPair * 3U) * kSourceWidth +
+                    kCropByteX;
+            const uint8_t* sourceRow1 = sourceRow0 + kSourceWidth;
+            uint8_t* targetRow0 = target + (rowPair * 2U) * kTargetWidth;
+            uint8_t* targetRow1 = targetRow0 + kTargetWidth;
+            for (size_t group = 0; group < kTargetWidth / 2U; ++group) {
+                const size_t sourceOffset = group * 3U;
+                const size_t targetOffset = group * 2U;
+                targetRow0[targetOffset] = sourceRow0[sourceOffset];
+                targetRow0[targetOffset + 1U] = sourceRow0[sourceOffset + 1U];
+                targetRow1[targetOffset] = sourceRow1[sourceOffset];
+                targetRow1[targetOffset + 1U] = sourceRow1[sourceOffset + 1U];
+            }
+        }
+
+        const uint8_t* sourceVu = source + kSourceWidth * kSourceHeight;
+        uint8_t* targetVu = target + kTargetWidth * kTargetHeight;
+        for (size_t rowPair = 0; rowPair < kTargetHeight / 4U; ++rowPair) {
+            const uint8_t* sourceRow0 = sourceVu +
+                    (rowPair * 3U) * kSourceWidth + kCropByteX;
+            const uint8_t* sourceRow1 = sourceRow0 + kSourceWidth;
+            uint8_t* targetRow0 = targetVu + (rowPair * 2U) * kTargetWidth;
+            uint8_t* targetRow1 = targetRow0 + kTargetWidth;
+            // Each iteration copies two VU pairs and skips the third pair.
+            for (size_t group = 0; group < kTargetWidth / 4U; ++group) {
+                memcpy(targetRow0 + group * 4U, sourceRow0 + group * 6U, 4U);
+                memcpy(targetRow1 + group * 4U, sourceRow1 + group * 6U, 4U);
+            }
+        }
+    }
+
+    bool schedulePreviewCacheUpdate(camera3_stream_buffer_t& source,
+                                    uint32_t generation) {
+        if (gralloc_ == nullptr || source.stream == nullptr || source.buffer == nullptr ||
+            source.stream->width != 1280 || source.stream->height != 720) {
+            return false;
+        }
+
+        constexpr size_t kHdNv21Size = 1280U * 720U * 3U / 2U;
+        std::lock_guard<std::mutex> lock(previewScalerMutex_);
+        const bool cacheReady = previewCacheValid_ &&
+                previewCacheGeneration_ == generation;
+        const int64_t nowNs = systemTime(SYSTEM_TIME_MONOTONIC);
+        constexpr int64_t kPreviewScaleIntervalNs = 100000000LL;
+        if (previewScalerExit_ || previewScalePending_ || previewScaleActive_ ||
+            generation != previewScalerGeneration_ ||
+            (cacheReady && nowNs - previewScaleLastQueuedNs_ <
+                     kPreviewScaleIntervalNs)) {
+            return cacheReady;
+        }
+
+        void* sourceData = nullptr;
+        const int rc = gralloc_->lock(gralloc_, *source.buffer,
+                                      GRALLOC_USAGE_SW_READ_OFTEN,
+                                      0, 0, 1280, 720, &sourceData);
+        if (rc != 0 || sourceData == nullptr) {
+            ALOGW("Could not stage 720p preview cache input: %d", rc);
+            return cacheReady;
+        }
+        previewScaleInput_.resize(kHdNv21Size);
+        memcpy(previewScaleInput_.data(), sourceData, kHdNv21Size);
+        gralloc_->unlock(gralloc_, *source.buffer);
+
+        previewScaleJobGeneration_ = generation;
+        previewScaleLastQueuedNs_ = nowNs;
+        previewScalePending_ = true;
+        previewScalerCv_.notify_one();
+        return cacheReady;
+    }
+
+    int copyPreviewCacheToBuffer(const std::shared_ptr<PendingFrame>& frame,
+                                 camera3_stream_buffer_t& target) {
+        if (frame == nullptr || gralloc_ == nullptr || target.stream == nullptr ||
+            target.buffer == nullptr || target.stream->width != 640 ||
+            target.stream->height != 480) {
+            return -EINVAL;
+        }
+        if (waitAndCloseAcquireFence(&target) != 0) {
+            return -errno;
+        }
+
+        void* targetData = nullptr;
+        int rc = gralloc_->lock(gralloc_, *target.buffer,
+                                GRALLOC_USAGE_SW_WRITE_OFTEN,
+                                0, 0, 640, 480, &targetData);
+        if (rc != 0 || targetData == nullptr) {
+            return rc != 0 ? rc : -EIO;
+        }
+
+        {
+            std::lock_guard<std::mutex> lock(previewScalerMutex_);
+            if (!previewCacheValid_ ||
+                previewCacheGeneration_ != frame->generation ||
+                previewCache_.size() != 640U * 480U * 3U / 2U) {
+                rc = -EAGAIN;
+            } else {
+                memcpy(targetData, previewCache_.data(), previewCache_.size());
+            }
+        }
+        gralloc_->unlock(gralloc_, *target.buffer);
+        return rc;
+    }
+
+    void resetPreviewScaler(uint32_t generation) {
+        std::lock_guard<std::mutex> lock(previewScalerMutex_);
+        previewScalerGeneration_ = generation;
+        previewScalePending_ = false;
+        previewCacheValid_ = false;
+        previewScaleLastQueuedNs_ = 0;
+        previewCache_.clear();
+    }
+
+    void resetVideoBlitter() {
+        if (videoBlitter_.flagCreate() && !videoBlitter_.destroy()) {
+            ALOGW("FIMC1 video blitter did not shut down cleanly");
+        }
+        videoBlitterWidth_ = 0;
+        videoBlitterHeight_ = 0;
+        videoBlitterDestinationWidth_ = 0;
+        videoBlitterDestinationHeight_ = 0;
+        videoBlitterFormat_ = 0;
+    }
+
+    uint64_t queueVideoBlit(const std::shared_ptr<PendingFrame>& frame,
+                            const void* source, size_t sourceSize,
+                            uint32_t sourceYAddr, uint32_t sourceCbcrAddr,
+                            camera3_stream_buffer_t* target) {
+        if (frame == nullptr || target == nullptr) {
+            return 0;
+        }
+
+        std::unique_lock<std::mutex> lock(videoBlitMutex_);
+        videoBlitDoneCv_.wait(lock, [this] {
+            return videoBlitExit_ || (!videoBlitPending_ && !videoBlitActive_);
+        });
+        if (videoBlitExit_) {
+            return 0;
+        }
+
+        NativeVideoBlitJob job;
+        job.frame = frame;
+        job.source = source;
+        job.sourceSize = sourceSize;
+        job.sourceYAddr = sourceYAddr;
+        job.sourceCbcrAddr = sourceCbcrAddr;
+        job.width = nativeVideoWidth_;
+        job.height = nativeVideoHeight_;
+        job.target = target;
+        job.sequence = ++videoBlitSubmittedSequence_;
+        videoBlitJob_ = std::move(job);
+        videoBlitPending_ = true;
+        videoBlitCv_.notify_one();
+        return videoBlitSubmittedSequence_;
+    }
+
+    int waitForVideoBlit(uint64_t sequence) {
+        if (sequence == 0) {
+            return -ECANCELED;
+        }
+        std::unique_lock<std::mutex> lock(videoBlitMutex_);
+        videoBlitDoneCv_.wait(lock, [this, sequence] {
+            return videoBlitCompletedSequence_ >= sequence ||
+                    (videoBlitExit_ && !videoBlitPending_ && !videoBlitActive_);
+        });
+        return videoBlitCompletedSequence_ >= sequence
+                ? videoBlitResult_
+                : -ECANCELED;
+    }
+
+    void videoBlitLoop() {
+        setNativeCameraThreadPriority("FIMC1 video", kAndroidPriorityUrgentDisplay);
+        while (true) {
+            NativeVideoBlitJob job;
+            {
+                std::unique_lock<std::mutex> lock(videoBlitMutex_);
+                videoBlitCv_.wait(lock, [this] {
+                    return videoBlitExit_ || videoBlitPending_;
+                });
+                if (videoBlitExit_ && !videoBlitPending_) {
+                    return;
+                }
+                job = std::move(videoBlitJob_);
+                videoBlitPending_ = false;
+                videoBlitActive_ = true;
+            }
+
+            const int rc = copyNativeNv21ToBuffer(
+                    job.frame, job.source, job.sourceSize,
+                    job.sourceYAddr, job.sourceCbcrAddr,
+                    job.width, job.height, job.target);
+
+            {
+                std::lock_guard<std::mutex> lock(videoBlitMutex_);
+                videoBlitResult_ = rc;
+                videoBlitCompletedSequence_ = job.sequence;
+                videoBlitActive_ = false;
+            }
+            videoBlitDoneCv_.notify_all();
+        }
+    }
+
+    void stopVideoBlitWorker() {
+        {
+            std::lock_guard<std::mutex> lock(videoBlitMutex_);
+            videoBlitExit_ = true;
+        }
+        videoBlitCv_.notify_all();
+        videoBlitDoneCv_.notify_all();
+        if (videoBlitWorker_.joinable()) {
+            videoBlitWorker_.join();
+        }
+    }
+
+    void resetPreviewBlitter() {
+        if (previewBlitter_.flagCreate() && !previewBlitter_.destroy()) {
+            ALOGW("FIMC3 preview blitter did not shut down cleanly");
+        }
+        previewBlitterSourceWidth_ = 0;
+        previewBlitterSourceHeight_ = 0;
+        previewBlitterWidth_ = 0;
+        previewBlitterHeight_ = 0;
+        previewBlitterFormat_ = 0;
+    }
+
+    void previewScalerLoop() {
+        constexpr size_t kVgaNv21Size = 640U * 480U * 3U / 2U;
+        while (true) {
+            uint32_t generation = 0;
+            {
+                std::unique_lock<std::mutex> lock(previewScalerMutex_);
+                previewScalerCv_.wait(lock, [this] {
+                    return previewScalerExit_ || previewScalePending_;
+                });
+                if (previewScalerExit_) {
+                    return;
+                }
+                generation = previewScaleJobGeneration_;
+                previewScalePending_ = false;
+                previewScaleActive_ = true;
+            }
+
+            previewScaleOutput_.resize(kVgaNv21Size);
+            scaleHdNv21ToVga(previewScaleInput_.data(), previewScaleOutput_.data());
+
+            {
+                std::lock_guard<std::mutex> lock(previewScalerMutex_);
+                if (generation == previewScalerGeneration_) {
+                    previewCache_.swap(previewScaleOutput_);
+                    previewCacheGeneration_ = generation;
+                    previewCacheValid_ = true;
+                }
+                previewScaleActive_ = false;
+                previewScalerCv_.notify_all();
+            }
+        }
+    }
+
+    void stopPreviewScaler() {
+        {
+            std::lock_guard<std::mutex> lock(previewScalerMutex_);
+            previewScalerExit_ = true;
+            previewScalePending_ = false;
+            previewScalerCv_.notify_all();
+        }
+        if (previewScalerWorker_.joinable()) {
+            previewScalerWorker_.join();
+        }
     }
 
     int copyPreviewToAnalysis(const std::shared_ptr<PendingFrame>& frame,
@@ -1684,6 +1994,7 @@ private:
             message.message.error.error_code = CAMERA3_MSG_ERROR_BUFFER;
             callbacks_->notify(callbacks_, &message);
         }
+        std::lock_guard<std::mutex> callbackLock(callbackMutex_);
         camera3_capture_result_t result{};
         result.frame_number = frameNumber;
         result.num_output_buffers = 1;
@@ -1693,6 +2004,18 @@ private:
 
     void sendBufferError(uint32_t frameNumber, camera3_stream_buffer_t buffer) {
         returnBufferError(frameNumber, buffer, true);
+    }
+
+    void notifyBufferError(uint32_t frameNumber, camera3_stream_t* stream) {
+        if (callbacks_ == nullptr || callbacks_->notify == nullptr || stream == nullptr) {
+            return;
+        }
+        camera3_notify_msg_t message{};
+        message.type = CAMERA3_MSG_ERROR;
+        message.message.error.frame_number = frameNumber;
+        message.message.error.error_stream = stream;
+        message.message.error.error_code = CAMERA3_MSG_ERROR_BUFFER;
+        callbacks_->notify(callbacks_, &message);
     }
 
     void rejectRawRequest(camera3_capture_request_t* request, const char* reason) {
@@ -1713,6 +2036,7 @@ private:
             buffers.push_back(buffer);
         }
 
+        std::lock_guard<std::mutex> callbackLock(callbackMutex_);
         camera3_capture_result_t result{};
         result.frame_number = request->frame_number;
         result.num_output_buffers = static_cast<uint32_t>(buffers.size());
@@ -1774,6 +2098,7 @@ private:
             return;
         }
 
+        std::lock_guard<std::mutex> callbackLock(callbackMutex_);
         camera3_capture_result_t result{};
         result.frame_number = frame->frameNumber;
         result.result = metadata;
@@ -1785,20 +2110,31 @@ private:
 
     void sendResult(const std::shared_ptr<PendingFrame>& frame,
                     camera3_stream_buffer_t buffer, bool includeMetadata) {
+        sendResults(frame, &buffer, 1, includeMetadata);
+    }
+
+    void sendResults(const std::shared_ptr<PendingFrame>& frame,
+                     camera3_stream_buffer_t* buffers, uint32_t bufferCount,
+                     bool includeMetadata) {
         if (callbacks_ == nullptr || callbacks_->process_capture_result == nullptr) {
             return;
         }
-        buffer.acquire_fence = -1;
-        buffer.release_fence = -1;
+        for (uint32_t i = 0; i < bufferCount; ++i) {
+            if (buffers[i].status == CAMERA3_BUFFER_STATUS_OK) {
+                buffers[i].acquire_fence = -1;
+                buffers[i].release_fence = -1;
+            }
+        }
         camera_metadata_t* metadata = includeMetadata
                 ? buildResultMetadata(id_, frame->timestamp, afState_.load(),
                                       frame->cropRegion.data())
                 : nullptr;
+        std::lock_guard<std::mutex> callbackLock(callbackMutex_);
         camera3_capture_result_t result{};
         result.frame_number = frame->frameNumber;
         result.result = metadata;
-        result.num_output_buffers = 1;
-        result.output_buffers = &buffer;
+        result.num_output_buffers = bufferCount;
+        result.output_buffers = buffers;
         result.partial_result = metadata != nullptr ? 1 : 0;
         callbacks_->process_capture_result(callbacks_, &result);
         if (metadata != nullptr) {
@@ -1806,21 +2142,171 @@ private:
         }
     }
 
+    void queueNativeResult(NativeResultJob&& job) {
+        {
+            std::lock_guard<std::mutex> lock(resultMutex_);
+            resultQueue_.push_back(std::move(job));
+        }
+        resultCv_.notify_one();
+    }
+
+    void resultLoop() {
+        // process_capture_result() returns the preview and video buffers to
+        // CameraX.  At 720p a delayed result therefore starves both consumers
+        // even though FIMC and MFC have already finished their work.  Keep the
+        // result dispatcher in the same urgent-display class as the native
+        // capture/FIMC workers so app-side GC cannot extend that ownership
+        // window by another frame interval.
+        setNativeCameraThreadPriority("Camera3 result",
+                                      kAndroidPriorityUrgentDisplay);
+        while (true) {
+            NativeResultJob job;
+            {
+                std::unique_lock<std::mutex> lock(resultMutex_);
+                resultCv_.wait(lock, [this] {
+                    return resultWorkerExit_ || !resultQueue_.empty();
+                });
+                if (resultWorkerExit_ && resultQueue_.empty()) {
+                    return;
+                }
+                job = std::move(resultQueue_.front());
+                resultQueue_.pop_front();
+                resultWorkerActive_ = true;
+            }
+
+            if (job.sendShutter && job.frame != nullptr) {
+                const int64_t shutterStartNs = systemTime(SYSTEM_TIME_MONOTONIC);
+                sendShutter(job.frame->frameNumber, job.frame->timestamp);
+                nativeShutterDeliveryNs_.fetch_add(
+                        systemTime(SYSTEM_TIME_MONOTONIC) - shutterStartNs,
+                        std::memory_order_relaxed);
+                nativeShutterDeliveryCount_.fetch_add(1, std::memory_order_relaxed);
+            }
+
+            // A mixed-success capture must advertise each failed buffer before
+            // returning it with CAMERA3_BUFFER_STATUS_ERROR. Keep these HIDL
+            // notifications off the V4L2 capture thread as well.
+            if (job.frame != nullptr) {
+                for (uint32_t i = 0; i < job.bufferCount; ++i) {
+                    if (job.buffers[i].status == CAMERA3_BUFFER_STATUS_ERROR) {
+                        notifyBufferError(job.frame->frameNumber,
+                                          job.buffers[i].stream);
+                    }
+                }
+            }
+
+            const int64_t resultStartNs = systemTime(SYSTEM_TIME_MONOTONIC);
+            sendResults(job.frame, job.buffers.data(), job.bufferCount,
+                        job.includeMetadata);
+            nativeResultDeliveryNs_.fetch_add(
+                    systemTime(SYSTEM_TIME_MONOTONIC) - resultStartNs,
+                    std::memory_order_relaxed);
+            nativeResultDeliveryCount_.fetch_add(1, std::memory_order_relaxed);
+
+            if (job.frame != nullptr) {
+                if (job.includeMetadata) {
+                    job.frame->metadataReturned = true;
+                }
+
+                // process_capture_result() transfers these buffers back to the
+                // framework. Drop every local reference before handling a JPEG
+                // continuation so flush() can never return one twice.
+                job.frame->previewBuffer.reset();
+                job.frame->videoBuffer.reset();
+                job.frame->analysisBuffer.reset();
+
+                if (job.frame->jpegBuffer.has_value()) {
+                    bool scheduleJpeg = false;
+                    {
+                        std::lock_guard<std::mutex> lock(stateMutex_);
+                        scheduleJpeg = !closing_ && !flushing_ &&
+                                job.frame->generation == sessionGeneration_.load();
+                        if (scheduleJpeg) {
+                            pendingJpeg_ = job.frame;
+                            previewAbort_ = true;
+                        }
+                    }
+                    if (scheduleJpeg) {
+                        previewCv_.notify_all();
+                        postTask(WorkerTask::TakePicture, job.frame->generation);
+                    } else {
+                        // Only the JPEG buffer remains owned here. The realtime
+                        // buffers above have already been delivered successfully.
+                        failFrame(job.frame);
+                    }
+                }
+            }
+
+            {
+                std::lock_guard<std::mutex> lock(resultMutex_);
+                resultWorkerActive_ = false;
+            }
+            resultIdleCv_.notify_all();
+        }
+    }
+
+    void stopResultWorker() {
+        {
+            std::lock_guard<std::mutex> lock(resultMutex_);
+            resultWorkerExit_ = true;
+        }
+        resultCv_.notify_all();
+        if (resultWorker_.joinable()) {
+            resultWorker_.join();
+        }
+    }
+
     int flush() {
         std::deque<std::shared_ptr<PendingFrame>> queued;
+        std::deque<NativeResultJob> pendingResults;
         std::vector<std::shared_ptr<PendingFrame>> inFlight;
         std::shared_ptr<PendingFrame> jpeg;
+        uint32_t newGeneration = 0;
         {
             std::unique_lock<std::mutex> lock(stateMutex_);
             flushing_ = true;
             previewAbort_ = true;
-            sessionGeneration_.fetch_add(1);
+            newGeneration = sessionGeneration_.fetch_add(1) + 1;
             previewCv_.notify_all();
             stillCv_.notify_all();
             jpegWorkerCv_.wait(lock, [this] {
                 return !jpegWorkerActive_ && jpegCallbacksActive_ == 0;
             });
             queued.swap(previewQueue_);
+            jpeg.swap(pendingJpeg_);
+            workerTasks_.erase(
+                    std::remove_if(workerTasks_.begin(), workerTasks_.end(),
+                                   [](const WorkerCommand& command) {
+                                       return command.task != WorkerTask::Exit;
+                                   }),
+                    workerTasks_.end());
+        }
+        // Invalidate queued scaler work before returning any framework buffer.
+        // An already-running scaler only owns its private CPU staging vectors
+        // and will discard the result because its generation no longer matches.
+        resetPreviewScaler(newGeneration);
+
+        {
+            std::lock_guard<std::mutex> lock(backendOpsMutex_);
+            if (backend_ != nullptr) {
+                exynos_camera_backend_cancel_picture(backend_);
+                exynos_camera_backend_stop_preview(backend_);
+            }
+        }
+        previewStarted_.store(false);
+
+        // stop_preview() has joined the native frame callback, so no FIMC1 or
+        // FIMC3 QBUF/DQBUF can still be active. Tear the persistent DMA
+        // sessions down before returning or reconfiguring framework buffers.
+        resetVideoBlitter();
+        resetPreviewBlitter();
+
+        // stop_preview() synchronizes with preview_mutex, which is held for
+        // the complete native V4L2 callback. Collect in-flight Camera3 buffers
+        // only after that callback has left. Clearing this map before stopping
+        // caused a stale callback to return -ENOENT and kill the preview thread.
+        {
+            std::lock_guard<std::mutex> lock(stateMutex_);
             inFlight.reserve(inFlightPreview_.size());
             for (const auto& [buffer, frame] : inFlightPreview_) {
                 (void)buffer;
@@ -1830,30 +2316,22 @@ private:
             for (auto& scratch : scratchPreviewBuffers_) {
                 scratch.inUse = false;
             }
-            jpeg.swap(pendingJpeg_);
-            workerTasks_.erase(
-                    std::remove_if(workerTasks_.begin(), workerTasks_.end(),
-                                   [](const WorkerCommand& command) {
-                                       return command.task != WorkerTask::Exit;
-                                   }),
-                    workerTasks_.end());
         }
 
+        // A native frame leaves inFlightPreview_ once all CPU/FIMC writes are
+        // complete, then waits here only for its Camera3 callback. Remove jobs
+        // which have not started, and wait for the one callback which may
+        // already be executing. This preserves FIFO result order and guarantees
+        // that flush() returns every framework buffer exactly once.
         {
-            std::lock_guard<std::mutex> lock(legacyOpsMutex_);
-            if (legacyDevice_ != nullptr && legacyDevice_->ops != nullptr) {
-                if (legacyDevice_->ops->cancel_picture != nullptr) {
-                    legacyDevice_->ops->cancel_picture(legacyDevice_);
-                }
-                if (legacyDevice_->ops->stop_preview != nullptr) {
-                    legacyDevice_->ops->stop_preview(legacyDevice_);
-                }
-            }
+            std::unique_lock<std::mutex> lock(resultMutex_);
+            pendingResults.swap(resultQueue_);
+            resultIdleCv_.wait(lock, [this] { return !resultWorkerActive_; });
         }
-        previewStarted_.store(false);
 
         for (const auto& frame : queued) failFrame(frame);
         for (const auto& frame : inFlight) failFrame(frame);
+        for (const auto& job : pendingResults) failFrame(job.frame);
         failFrame(jpeg);
 
         {
@@ -1868,9 +2346,9 @@ private:
     }
 
     void dump(int fd) {
-        dprintf(fd, "N7000 thin HAL3 wrapper\n");
+        dprintf(fd, "Camera3 HAL\n");
         dprintf(fd, "camera id: %d\n", id_);
-        dprintf(fd, "legacy module: %s\n", LegacyModule::get().path().c_str());
+        dprintf(fd, "camera backend: direct Exynos4 V4L2/FIMC\n");
         dprintf(fd, "configured: %d previewStarted: %d\n", configured_,
                 previewStarted_.load());
         dprintf(fd, "preview source: %dx%d video: %dx%d analysis: %dx%d jpeg: %dx%d\n",
@@ -1897,30 +2375,23 @@ private:
             worker_.join();
         }
         {
-            std::lock_guard<std::mutex> lock(legacyOpsMutex_);
-            // The legacy JPEG thread is detached. Stop any callback that starts
-            // during close from retaining this shim as its user pointer. An
+            std::lock_guard<std::mutex> lock(backendOpsMutex_);
+            // The JPEG thread is detached. Stop any callback that starts
+            // during close from retaining this HAL instance as its user pointer. An
             // already-running callback is tracked and drained by flush().
-            if (legacyDevice_ != nullptr && legacyDevice_->ops != nullptr &&
-                legacyDevice_->ops->set_callbacks != nullptr) {
-                legacyDevice_->ops->set_callbacks(
-                        legacyDevice_, legacyNotifyCallback, legacyDataCallback,
-                        legacyTimestampCallback, requestLegacyMemory, nullptr);
+            if (backend_ != nullptr) {
+                exynos_camera_backend_set_callbacks(
+                        backend_, backendNotifyCallback, backendDataCallback,
+                        backendTimestampCallback, requestBackendMemory, nullptr);
             }
         }
         flush();
+        stopResultWorker();
         {
-            std::lock_guard<std::mutex> lock(legacyOpsMutex_);
-            if (legacyDevice_ != nullptr) {
-                // Do not call both HAL1 release() and common.close(). The N7000
-                // backend deinitializes in both paths, so doing both double-frees it.
-                if (legacyDevice_->common.close != nullptr) {
-                    legacyDevice_->common.close(&legacyDevice_->common);
-                } else if (legacyDevice_->ops != nullptr &&
-                           legacyDevice_->ops->release != nullptr) {
-                    legacyDevice_->ops->release(legacyDevice_);
-                }
-                legacyDevice_ = nullptr;
+            std::lock_guard<std::mutex> lock(backendOpsMutex_);
+            if (backend_ != nullptr) {
+                exynos_camera_backend_close(backend_);
+                backend_ = nullptr;
             }
         }
         if (id_ == 0) {
@@ -1986,31 +2457,16 @@ private:
             }
             previewAbort_ = false;
         }
-        std::lock_guard<std::mutex> lock(legacyOpsMutex_);
-        if (generation != sessionGeneration_.load() || legacyDevice_ == nullptr ||
-            legacyDevice_->ops == nullptr ||
-            legacyDevice_->ops->start_preview == nullptr) {
+        std::lock_guard<std::mutex> lock(backendOpsMutex_);
+        if (generation != sessionGeneration_.load() || backend_ == nullptr) {
             return;
         }
 
-        // exynos_camera_preview_stop(), including the stop performed by
-        // take_picture(), clears HAL1's preview_window pointer. Reattach the
-        // shim before every preview start; otherwise the legacy thread waits
-        // forever for a preview window and Camera3 retains all output buffers.
-        if (legacyDevice_->ops->set_preview_window != nullptr) {
-            const int windowRc = legacyDevice_->ops->set_preview_window(
-                    legacyDevice_, &previewWindow_.ops);
-            if (windowRc != 0) {
-                ALOGE("HAL1 set_preview_window before restart failed: %d", windowRc);
-                return;
-            }
-        }
-
-        const int rc = legacyDevice_->ops->start_preview(legacyDevice_);
+        const int rc = exynos_camera_backend_start_preview(backend_);
         if (rc == 0) {
             previewStarted_.store(true);
         } else {
-            ALOGE("HAL1 start_preview failed: %d", rc);
+            ALOGE("Native backend start_preview failed: %d", rc);
         }
     }
 
@@ -2025,7 +2481,7 @@ private:
                 return;
             }
             jpegWorkerActive_ = true;
-            // The HAL1 backend stops and joins its preview thread from
+            // The backend stops and joins its preview thread from
             // take_picture(). Wake a preview dequeue that is waiting for the
             // next camera3 buffer first, otherwise that join can deadlock.
             previewAbort_ = true;
@@ -2063,11 +2519,19 @@ private:
 
         int rc = -ENODEV;
         {
-            std::lock_guard<std::mutex> lock(legacyOpsMutex_);
-            if (generation == sessionGeneration_.load() && legacyDevice_ != nullptr &&
-                legacyDevice_->ops != nullptr &&
-                legacyDevice_->ops->take_picture != nullptr) {
-                rc = legacyDevice_->ops->take_picture(legacyDevice_);
+            std::lock_guard<std::mutex> lock(backendOpsMutex_);
+            if (generation == sessionGeneration_.load() && backend_ != nullptr) {
+                // The still request waited behind older native preview frames.
+                // Reapply its exact Camera3 parameter snapshot now so newer
+                // repeating requests cannot replace JPEG orientation/quality
+                // before the backend creates EXIF and starts capture.
+                rc = frame->jpegParameters.empty()
+                        ? 0
+                        : exynos_camera_backend_set_parameters(
+                                  backend_, frame->jpegParameters.c_str());
+                if (rc == 0) {
+                    rc = exynos_camera_backend_take_picture(backend_);
+                }
             }
         }
         finishWorker();
@@ -2077,7 +2541,7 @@ private:
             return;
         }
         if (rc != 0) {
-            ALOGE("HAL1 take_picture failed: %d", rc);
+            ALOGE("Native backend take_picture failed: %d", rc);
             failFrame(frame);
             {
                 std::lock_guard<std::mutex> lock(stateMutex_);
@@ -2091,12 +2555,6 @@ private:
             }
             postTask(WorkerTask::StartPreview, generation);
         }
-    }
-
-    static int previewDequeueBuffer(preview_stream_ops_t* window,
-                                    buffer_handle_t** buffer, int* stride) {
-        PreviewWindow* wrapper = from(window);
-        return wrapper == nullptr ? -EINVAL : wrapper->owner->dequeuePreview(buffer, stride);
     }
 
     int dequeuePreview(buffer_handle_t** buffer, int* stride) {
@@ -2227,20 +2685,634 @@ private:
         }
     }
 
-    static int previewEnqueueBuffer(preview_stream_ops_t* window,
-                                    buffer_handle_t* buffer) {
-        PreviewWindow* wrapper = from(window);
-        return wrapper == nullptr
+    static int backendFrameCallback(const void* previewData, size_t previewSize,
+                                    const void* recordingData, size_t recordingSize,
+                                    uint32_t previewYAddr, uint32_t previewCbcrAddr,
+                                    uint32_t recordingYAddr, uint32_t recordingCbcrAddr,
+                                    int64_t timestampNs, void* user) {
+        auto* self = static_cast<NativeCamera3Device*>(user);
+        return self == nullptr
                 ? -EINVAL
-                : wrapper->owner->completePreview(buffer, false);
+                : self->consumeNativeFrame(previewData, previewSize,
+                                           recordingData, recordingSize,
+                                           previewYAddr, previewCbcrAddr,
+                                           recordingYAddr, recordingCbcrAddr,
+                                           timestampNs);
     }
 
-    static int previewCancelBuffer(preview_stream_ops_t* window,
-                                   buffer_handle_t* buffer) {
-        PreviewWindow* wrapper = from(window);
-        return wrapper == nullptr
-                ? -EINVAL
-                : wrapper->owner->completePreview(buffer, true);
+    int consumeNativeFrame(const void* previewData, size_t previewSize,
+                           const void* recordingData, size_t recordingSize,
+                           uint32_t previewYAddr, uint32_t previewCbcrAddr,
+                           uint32_t recordingYAddr, uint32_t recordingCbcrAddr,
+                           int64_t timestampNs) {
+        if (previewData == nullptr || gralloc_ == nullptr) {
+            return -EINVAL;
+        }
+        const int64_t processingStartNs = systemTime(SYSTEM_TIME_MONOTONIC);
+
+        buffer_handle_t* handle = nullptr;
+        int stride = 0;
+        const int dequeueRc = dequeuePreview(&handle, &stride);
+        if (dequeueRc != 0 || handle == nullptr) {
+            return dequeueRc != 0 ? dequeueRc : -ENODEV;
+        }
+        const int64_t dequeueDoneNs = systemTime(SYSTEM_TIME_MONOTONIC);
+        (void)stride;
+
+        {
+            std::lock_guard<std::mutex> lock(stateMutex_);
+            if (handle == &drainPreviewBuffer_.handle) {
+                return 0;
+            }
+        }
+
+        const size_t requiredSize = static_cast<size_t>(nativePreviewWidth_) *
+                static_cast<size_t>(nativePreviewHeight_) * 3U / 2U;
+        if (previewSize < requiredSize) {
+            ALOGE("Native preview frame is too small: %zu/%zu",
+                  previewSize, requiredSize);
+            return completeNativeFrame(handle, true, recordingData, recordingSize,
+                                       recordingYAddr, recordingCbcrAddr, false, 0);
+        }
+
+        // Resolve the Camera3 request before starting either memory-to-memory
+        // operation. FIMC1 and FIMC3 are independent Exynos hardware engines,
+        // so the HD NV21-to-NV12 conversion can run beside the 640x480 preview
+        // transfer instead of extending the capture critical path.
+        std::shared_ptr<PendingFrame> capturedFrame;
+        {
+            std::lock_guard<std::mutex> lock(stateMutex_);
+            const auto it = inFlightPreview_.find(handle);
+            if (it != inFlightPreview_.end()) {
+                capturedFrame = it->second;
+                if (capturedFrame != nullptr) {
+                    capturedFrame->timestamp = timestampNs;
+                }
+            }
+        }
+        uint64_t videoBlitSequence = 0;
+        if (capturedFrame != nullptr && capturedFrame->videoBuffer.has_value()) {
+            videoBlitSequence = queueVideoBlit(
+                    capturedFrame, recordingData, recordingSize,
+                    recordingYAddr, recordingCbcrAddr,
+                    &*capturedFrame->videoBuffer);
+        }
+
+        const int64_t previewCopyStartNs = systemTime(SYSTEM_TIME_MONOTONIC);
+        const int previewTransferRc = copyNativePreviewToBuffer(
+                previewData, requiredSize, previewYAddr, previewCbcrAddr, handle);
+        const int64_t previewCopyNs =
+                systemTime(SYSTEM_TIME_MONOTONIC) - previewCopyStartNs;
+        const int videoRc = videoBlitSequence != 0
+                ? waitForVideoBlit(videoBlitSequence)
+                : 0;
+        if (previewTransferRc != 0) {
+            ALOGE("Could not transfer native Camera3 preview buffer: %d",
+                  previewTransferRc);
+            return completeNativeFrame(handle, true, recordingData, recordingSize,
+                                       recordingYAddr, recordingCbcrAddr,
+                                       videoBlitSequence != 0, videoRc);
+        }
+
+        // V4L2 callbacks are serialized in dequeue order, preserving Camera3's
+        // monotonically increasing result order while using a real capture time.
+        const int completeRc = completeNativeFrame(
+                handle, false, recordingData, recordingSize,
+                recordingYAddr, recordingCbcrAddr,
+                videoBlitSequence != 0, videoRc);
+        const int64_t processingNs =
+                systemTime(SYSTEM_TIME_MONOTONIC) - processingStartNs;
+        if (nativeFrameWindowStartNs_ == 0) {
+            nativeFrameWindowStartNs_ = timestampNs;
+        }
+        ++nativeFrameCount_;
+        nativeFrameProcessingNs_ += processingNs;
+        nativeDequeueWaitNs_ += dequeueDoneNs - processingStartNs;
+        nativePreviewCopyNs_ += previewCopyNs;
+        const int64_t cadenceWindowNs = timestampNs - nativeFrameWindowStartNs_;
+        if (cadenceWindowNs >= 5000000000LL && nativeFrameCount_ > 1) {
+            const double fps = static_cast<double>(nativeFrameCount_ - 1U) * 1.0e9 /
+                    static_cast<double>(cadenceWindowNs);
+            const double averageProcessingMs =
+                    static_cast<double>(nativeFrameProcessingNs_) / 1.0e6 /
+                    static_cast<double>(nativeFrameCount_);
+            const double averageDequeueMs =
+                    static_cast<double>(nativeDequeueWaitNs_) / 1.0e6 /
+                    static_cast<double>(nativeFrameCount_);
+            const double averagePreviewCopyMs =
+                    static_cast<double>(nativePreviewCopyNs_) / 1.0e6 /
+                    static_cast<double>(nativeFrameCount_);
+            const uint32_t resultDeliveryCount =
+                    nativeResultDeliveryCount_.exchange(0, std::memory_order_relaxed);
+            const int64_t resultDeliveryNs =
+                    nativeResultDeliveryNs_.exchange(0, std::memory_order_relaxed);
+            const uint32_t shutterDeliveryCount =
+                    nativeShutterDeliveryCount_.exchange(0, std::memory_order_relaxed);
+            const int64_t shutterDeliveryNs =
+                    nativeShutterDeliveryNs_.exchange(0, std::memory_order_relaxed);
+            const double averageResultMs = resultDeliveryCount == 0
+                    ? 0.0
+                    : static_cast<double>(resultDeliveryNs) / 1.0e6 /
+                            static_cast<double>(resultDeliveryCount);
+            const double averageShutterMs = shutterDeliveryCount == 0
+                    ? 0.0
+                    : static_cast<double>(shutterDeliveryNs) / 1.0e6 /
+                            static_cast<double>(shutterDeliveryCount);
+            if (videoBlitCount_ != 0) {
+                const double averageFenceMs =
+                        static_cast<double>(videoFenceWaitNs_) / 1.0e6 /
+                        static_cast<double>(videoBlitCount_);
+                const double averageBlitMs =
+                        static_cast<double>(videoBlitProcessingNs_) / 1.0e6 /
+                        static_cast<double>(videoBlitCount_);
+                ALOGI("Native capture cadence %.1f fps; capture thread %.1f ms/frame "
+                      "(request %.1f, preview transfer %.1f, async shutter %.1f, "
+                      "result %.1f ms); preview FIMC3/CPU %u/%u; encoder fence "
+                      "%.1f ms, persistent FIMC1 %.1f ms (%u frames)",
+                      fps, averageProcessingMs, averageDequeueMs,
+                      averagePreviewCopyMs, averageShutterMs, averageResultMs,
+                      previewDmaCount_, previewCpuCopyCount_, averageFenceMs,
+                      averageBlitMs, videoBlitCount_);
+            } else {
+                ALOGI("Native capture cadence %.1f fps; capture thread %.1f ms/frame "
+                      "(request %.1f, preview transfer %.1f, async shutter %.1f, "
+                      "result %.1f ms)",
+                      fps, averageProcessingMs, averageDequeueMs,
+                      averagePreviewCopyMs, averageShutterMs, averageResultMs);
+            }
+            nativeFrameWindowStartNs_ = 0;
+            nativeFrameCount_ = 0;
+            nativeFrameProcessingNs_ = 0;
+            nativeDequeueWaitNs_ = 0;
+            nativePreviewCopyNs_ = 0;
+            previewDmaCount_ = 0;
+            previewCpuCopyCount_ = 0;
+            videoBlitCount_ = 0;
+            videoFenceWaitNs_ = 0;
+            videoBlitProcessingNs_ = 0;
+        }
+        return completeRc;
+    }
+
+    int copyNativePreviewToBuffer(const void* source, size_t sourceSize,
+                                  uint32_t sourceYAddr, uint32_t sourceCbcrAddr,
+                                  buffer_handle_t* target) {
+        if (source == nullptr || target == nullptr || *target == nullptr ||
+            gralloc_ == nullptr) {
+            return -EINVAL;
+        }
+        const size_t requiredSize = static_cast<size_t>(nativePreviewWidth_) *
+                static_cast<size_t>(nativePreviewHeight_) * 3U / 2U;
+        if (sourceSize < requiredSize) {
+            return -EINVAL;
+        }
+
+        private_handle_t* destination = private_handle_t::dynamicCast(*target);
+        const bool letterbox16By9 = nativePreviewWidth_ == previewWidth_ &&
+                nativePreviewHeight_ * 4 == previewHeight_ * 3;
+        const bool contiguousNv21 = destination != nullptr &&
+                (destination->flags & private_handle_t::PRIV_FLAGS_USES_ION) &&
+                destination->paddr != 0 &&
+                destination->format == HAL_PIXEL_FORMAT_YCrCb_420_SP &&
+                sourceYAddr != 0 && sourceCbcrAddr != 0;
+
+        if (contiguousNv21 && !previewBlitterUnavailable_) {
+            if (letterbox16By9 &&
+                std::find(previewLetterboxBuffers_.begin(),
+                          previewLetterboxBuffers_.end(), *target) ==
+                        previewLetterboxBuffers_.end()) {
+                void* destinationData = nullptr;
+                const int clearRc = gralloc_->lock(
+                        gralloc_, *target, GRALLOC_USAGE_SW_WRITE_OFTEN,
+                        0, 0, previewWidth_, previewHeight_, &destinationData);
+                if (clearRc == 0 && destinationData != nullptr) {
+                    const size_t lumaSize = static_cast<size_t>(previewWidth_) *
+                            static_cast<size_t>(previewHeight_);
+                    auto* destinationBytes = static_cast<uint8_t*>(destinationData);
+                    memset(destinationBytes, 0, lumaSize);
+                    memset(destinationBytes + destination->uoffset, 128, lumaSize / 2U);
+                    gralloc_->unlock(gralloc_, *target);
+                    previewLetterboxBuffers_.push_back(*target);
+                } else {
+                    ALOGW("Could not initialize preview letterbox buffer: %d", clearRc);
+                }
+            }
+            if (previewBlitter_.flagCreate() &&
+                (previewBlitterSourceWidth_ != nativePreviewWidth_ ||
+                 previewBlitterSourceHeight_ != nativePreviewHeight_ ||
+                 previewBlitterWidth_ != previewWidth_ ||
+                 previewBlitterHeight_ != previewHeight_ ||
+                 previewBlitterFormat_ != destination->format)) {
+                resetPreviewBlitter();
+            }
+            if (!previewBlitter_.flagCreate()) {
+                if (!previewBlitter_.create(SecFimc::FIMC_DEV3,
+                                            FIMC_OVLY_NONE_SINGLE_BUF, 1)) {
+                    ALOGW("FIMC3 preview DMA is unavailable; using CPU copy");
+                    previewBlitterUnavailable_ = true;
+                } else {
+                    unsigned int sourceCropWidth =
+                            static_cast<unsigned int>(nativePreviewWidth_);
+                    unsigned int sourceCropHeight =
+                            static_cast<unsigned int>(nativePreviewHeight_);
+                    unsigned int destinationCropWidth = sourceCropWidth;
+                    unsigned int destinationCropHeight = sourceCropHeight;
+                    const unsigned int destinationY = letterbox16By9
+                            ? static_cast<unsigned int>(
+                                      (previewHeight_ - nativePreviewHeight_) / 2)
+                            : 0U;
+                    if (!previewBlitter_.setSrcParams(
+                                nativePreviewWidth_, nativePreviewHeight_, 0, 0,
+                                &sourceCropWidth, &sourceCropHeight,
+                                HAL_PIXEL_FORMAT_YCrCb_420_SP) ||
+                        !previewBlitter_.setDstParams(
+                                previewWidth_, previewHeight_, 0, destinationY,
+                                &destinationCropWidth, &destinationCropHeight,
+                                HAL_PIXEL_FORMAT_YCrCb_420_SP)) {
+                        ALOGW("Could not configure FIMC3 NV21 preview DMA; using CPU copy");
+                        resetPreviewBlitter();
+                        previewBlitterUnavailable_ = true;
+                    } else {
+                        previewBlitterSourceWidth_ = nativePreviewWidth_;
+                        previewBlitterSourceHeight_ = nativePreviewHeight_;
+                        previewBlitterWidth_ = previewWidth_;
+                        previewBlitterHeight_ = previewHeight_;
+                        previewBlitterFormat_ = destination->format;
+                        ALOGI("Native persistent FIMC3 NV21 preview DMA path enabled");
+                    }
+                }
+            }
+
+            if (previewBlitter_.flagCreate()) {
+                int dequeuedIndex = -1;
+                const bool blitOk =
+                        previewBlitter_.setSrcPhyAddr(
+                                sourceYAddr, sourceCbcrAddr, 0,
+                                HAL_PIXEL_FORMAT_YCrCb_420_SP) &&
+                        previewBlitter_.setDstPhyAddr(
+                                static_cast<unsigned int>(destination->paddr),
+                                static_cast<unsigned int>(destination->paddr) +
+                                        destination->uoffset, 0) &&
+                        previewBlitter_.streamOn() &&
+                        previewBlitter_.queueBuffer(0) &&
+                        previewBlitter_.dequeueBuffer(&dequeuedIndex) &&
+                        dequeuedIndex == 0;
+                if (blitOk) {
+                    ++previewDmaCount_;
+                    return 0;
+                }
+                ALOGW("FIMC3 preview DMA failed; disabling it for this session");
+                resetPreviewBlitter();
+                previewBlitterUnavailable_ = true;
+            }
+        }
+
+        // Internal drain/scratch buffers are intentionally UMP-only, and a
+        // kernel without a usable FIMC3 output node must remain functional.
+        // These cases keep the original CPU path; ordinary Camera3 preview
+        // buffers are contiguous ION and take the DMA path above.
+        void* destinationData = nullptr;
+        const int lockRc = gralloc_->lock(gralloc_, *target,
+                                          GRALLOC_USAGE_SW_WRITE_OFTEN,
+                                          0, 0, previewWidth_, previewHeight_,
+                                          &destinationData);
+        if (lockRc != 0 || destinationData == nullptr) {
+            return lockRc != 0 ? lockRc : -EIO;
+        }
+        if (letterbox16By9) {
+            auto* destinationBytes = static_cast<uint8_t*>(destinationData);
+            const auto* sourceBytes = static_cast<const uint8_t*>(source);
+            const size_t destinationY =
+                    static_cast<size_t>((previewHeight_ - nativePreviewHeight_) / 2);
+            const size_t nativeLumaSize = static_cast<size_t>(nativePreviewWidth_) *
+                    static_cast<size_t>(nativePreviewHeight_);
+            const size_t previewLumaSize = static_cast<size_t>(previewWidth_) *
+                    static_cast<size_t>(previewHeight_);
+            memset(destinationBytes, 0, previewLumaSize);
+            memset(destinationBytes + previewLumaSize, 128, previewLumaSize / 2U);
+            for (int row = 0; row < nativePreviewHeight_; ++row) {
+                memcpy(destinationBytes +
+                               (destinationY + static_cast<size_t>(row)) * previewWidth_,
+                       sourceBytes + static_cast<size_t>(row) * nativePreviewWidth_,
+                       static_cast<size_t>(nativePreviewWidth_));
+            }
+            for (int row = 0; row < nativePreviewHeight_ / 2; ++row) {
+                memcpy(destinationBytes + previewLumaSize +
+                               (destinationY / 2U + static_cast<size_t>(row)) * previewWidth_,
+                       sourceBytes + nativeLumaSize +
+                               static_cast<size_t>(row) * nativePreviewWidth_,
+                       static_cast<size_t>(nativePreviewWidth_));
+            }
+        } else {
+            memcpy(destinationData, source, requiredSize);
+        }
+        const int unlockRc = gralloc_->unlock(gralloc_, *target);
+        if (unlockRc != 0) {
+            return unlockRc;
+        }
+        ++previewCpuCopyCount_;
+        return 0;
+    }
+
+    int copyNativeNv21ToBuffer(const std::shared_ptr<PendingFrame>& frame,
+                               const void* source, size_t sourceSize,
+                               uint32_t sourceYAddr, uint32_t sourceCbcrAddr,
+                               int sourceWidth, int sourceHeight,
+                               camera3_stream_buffer_t* target) {
+        (void)source;
+        if (frame == nullptr || target == nullptr ||
+            target->stream == nullptr || target->buffer == nullptr || gralloc_ == nullptr) {
+            return -EINVAL;
+        }
+        const int targetWidth = static_cast<int>(target->stream->width);
+        const int targetHeight = static_cast<int>(target->stream->height);
+        const bool fullFov720 = sourceWidth == 1072 && sourceHeight == 800 &&
+                targetWidth == 1280 && targetHeight == 720;
+        if (!fullFov720 &&
+            (targetWidth != sourceWidth || targetHeight != sourceHeight)) {
+            ALOGE("Native stream size mismatch for frame %u: %dx%d -> %ux%u",
+                  frame->frameNumber, sourceWidth, sourceHeight,
+                  target->stream->width, target->stream->height);
+            return -EINVAL;
+        }
+        const size_t requiredSize = static_cast<size_t>(sourceWidth) *
+                static_cast<size_t>(sourceHeight) * 3U / 2U;
+        if (sourceSize < requiredSize || sourceYAddr == 0 || sourceCbcrAddr == 0) {
+            ALOGE("Native stream source is invalid for frame %u: size=%zu/%zu y=%#x cbcr=%#x",
+                  frame->frameNumber, sourceSize, requiredSize,
+                  sourceYAddr, sourceCbcrAddr);
+            return -EINVAL;
+        }
+        const int64_t fenceStartNs = systemTime(SYSTEM_TIME_MONOTONIC);
+        if (waitAndCloseAcquireFence(target) != 0) {
+            ALOGE("Timed out waiting for native stream acquire fence for frame %u: %s",
+                  frame->frameNumber, strerror(errno));
+            return -errno;
+        }
+        const int64_t fenceWaitNs =
+                systemTime(SYSTEM_TIME_MONOTONIC) - fenceStartNs;
+
+        private_handle_t* destination = private_handle_t::dynamicCast(*target->buffer);
+        if (destination == nullptr ||
+            !(destination->flags & private_handle_t::PRIV_FLAGS_USES_ION) ||
+            destination->paddr == 0) {
+            ALOGE("Encoder buffer for frame %u is not contiguous ION memory",
+                  frame->frameNumber);
+            return -EINVAL;
+        }
+
+        const int destinationFormat = target->stream->format;
+        if (destinationFormat != HAL_PIXEL_FORMAT_YCbCr_420_SP &&
+            destinationFormat != HAL_PIXEL_FORMAT_YCrCb_420_SP) {
+            ALOGE("Unsupported native video format 0x%x for frame %u",
+                  destinationFormat, frame->frameNumber);
+            return -EINVAL;
+        }
+
+        const size_t packedChromaOffset = static_cast<size_t>(targetWidth) *
+                static_cast<size_t>(targetHeight);
+        if (destination->uoffset < packedChromaOffset ||
+            (destination->uoffset & 0x7ffU) != 0) {
+            ALOGE("Encoder chroma plane for frame %u is not MFC-aligned: "
+                  "offset=%u packed=%zu",
+                  frame->frameNumber, destination->uoffset, packedChromaOffset);
+            return -EINVAL;
+        }
+        /*
+         * FIMC's ordinary NV12 single-buffer mode always places C immediately
+         * after width*height.  That address is not representable by MFC's
+         * 2 KiB plane registers at 1920x1080.  Select the driver's native
+         * NV12M layout whenever gralloc supplied an aligned plane gap; FIMC1
+         * and MFC then agree on the exact physical chroma address with no CPU
+         * staging copy.
+         */
+        const int fimcDestinationFormat =
+                destinationFormat == HAL_PIXEL_FORMAT_YCbCr_420_SP &&
+                static_cast<size_t>(destination->uoffset) != packedChromaOffset
+                ? V4L2_PIX_FMT_NV12M
+                : destinationFormat;
+
+        // FIMC writes only the centered 960x720 picture. Initialize each
+        // encoder buffer once so the untouched Y/UV margins remain black.
+        if (fullFov720 &&
+            std::find(videoPillarboxBuffers_.begin(), videoPillarboxBuffers_.end(),
+                      *target->buffer) == videoPillarboxBuffers_.end()) {
+            void* destinationData = nullptr;
+            const int clearRc = gralloc_->lock(
+                    gralloc_, *target->buffer, GRALLOC_USAGE_SW_WRITE_OFTEN,
+                    0, 0, targetWidth, targetHeight, &destinationData);
+            if (clearRc != 0 || destinationData == nullptr) {
+                ALOGE("Could not initialize 720p encoder pillarbox for frame %u: %d",
+                      frame->frameNumber, clearRc);
+                return clearRc != 0 ? clearRc : -EIO;
+            }
+            memset(destinationData, 0, packedChromaOffset);
+            memset(static_cast<uint8_t*>(destinationData) + destination->uoffset,
+                   128, packedChromaOffset / 2U);
+            const int unlockRc = gralloc_->unlock(gralloc_, *target->buffer);
+            if (unlockRc != 0) {
+                ALOGE("Could not flush 720p encoder pillarbox for frame %u: %d",
+                      frame->frameNumber, unlockRc);
+                return unlockRc;
+            }
+            videoPillarboxBuffers_.push_back(*target->buffer);
+        }
+
+        if (videoBlitter_.flagCreate() &&
+            (videoBlitterWidth_ != sourceWidth ||
+             videoBlitterHeight_ != sourceHeight ||
+             videoBlitterDestinationWidth_ != targetWidth ||
+             videoBlitterDestinationHeight_ != targetHeight ||
+             videoBlitterFormat_ != fimcDestinationFormat)) {
+            resetVideoBlitter();
+        }
+        if (!videoBlitter_.flagCreate()) {
+            if (!videoBlitter_.create(SecFimc::FIMC_DEV1,
+                                      FIMC_OVLY_NONE_SINGLE_BUF, 1)) {
+                ALOGE("Could not open FIMC1 video blitter");
+                return -ENODEV;
+            }
+            unsigned int cropWidth = static_cast<unsigned int>(sourceWidth);
+            unsigned int cropHeight = static_cast<unsigned int>(sourceHeight);
+            unsigned int destinationCropWidth = fullFov720 ? 960U : cropWidth;
+            unsigned int destinationCropHeight = fullFov720 ? 720U : cropHeight;
+            const unsigned int destinationX = fullFov720 ? 160U : 0U;
+            if (!videoBlitter_.setSrcParams(sourceWidth, sourceHeight, 0, 0,
+                                            &cropWidth, &cropHeight,
+                                            HAL_PIXEL_FORMAT_YCrCb_420_SP) ||
+                !videoBlitter_.setDstParams(targetWidth, targetHeight,
+                                            destinationX, 0,
+                                            &destinationCropWidth,
+                                            &destinationCropHeight,
+                                            fimcDestinationFormat)) {
+                ALOGE("Could not configure FIMC1 NV21-to-%s video blitter",
+                      destinationFormat == HAL_PIXEL_FORMAT_YCbCr_420_SP
+                              ? "NV12" : "NV21");
+                resetVideoBlitter();
+                return -EINVAL;
+            }
+            videoBlitterWidth_ = sourceWidth;
+            videoBlitterHeight_ = sourceHeight;
+            videoBlitterDestinationWidth_ = targetWidth;
+            videoBlitterDestinationHeight_ = targetHeight;
+            videoBlitterFormat_ = fimcDestinationFormat;
+            ALOGI("Native persistent FIMC1 NV21-to-%s DMA path enabled for camera video "
+                  "(%dx%d -> %dx%d, chroma offset=%u%s)",
+                  destinationFormat == HAL_PIXEL_FORMAT_YCbCr_420_SP
+                          ? (fimcDestinationFormat == V4L2_PIX_FMT_NV12M
+                                  ? "NV12M" : "NV12")
+                          : "NV21",
+                  sourceWidth, sourceHeight, targetWidth, targetHeight,
+                  destination->uoffset,
+                  fullFov720 ? ", 960x720 centered pillarbox" : "");
+        }
+
+        const int64_t blitStartNs = systemTime(SYSTEM_TIME_MONOTONIC);
+        int dequeuedIndex = -1;
+        const bool blitOk =
+                videoBlitter_.setSrcPhyAddr(sourceYAddr, sourceCbcrAddr, 0,
+                                            HAL_PIXEL_FORMAT_YCrCb_420_SP) &&
+                videoBlitter_.setDstPhyAddr(
+                        static_cast<unsigned int>(destination->paddr),
+                        static_cast<unsigned int>(destination->paddr) +
+                                destination->uoffset, 0) &&
+                videoBlitter_.streamOn() &&
+                videoBlitter_.queueBuffer(0) &&
+                videoBlitter_.dequeueBuffer(&dequeuedIndex) &&
+                dequeuedIndex == 0;
+        const int64_t blitProcessingNs =
+                systemTime(SYSTEM_TIME_MONOTONIC) - blitStartNs;
+        ++videoBlitCount_;
+        videoFenceWaitNs_ += fenceWaitNs;
+        videoBlitProcessingNs_ += blitProcessingNs;
+        if (!blitOk) {
+            ALOGE("FIMC1 video blit failed for frame %u", frame->frameNumber);
+            resetVideoBlitter();
+            return -EIO;
+        }
+        return 0;
+    }
+
+    int completeNativeFrame(buffer_handle_t* buffer, bool error,
+                            const void* recordingData, size_t recordingSize,
+                            uint32_t recordingYAddr, uint32_t recordingCbcrAddr,
+                            bool videoBlitPrepared, int preparedVideoRc) {
+        if (buffer == nullptr) {
+            return -EINVAL;
+        }
+
+        std::shared_ptr<PendingFrame> frame;
+        ScratchPreviewBuffer* scratch = nullptr;
+        {
+            std::lock_guard<std::mutex> lock(stateMutex_);
+            if (buffer == &drainPreviewBuffer_.handle) {
+                return 0;
+            }
+            const auto it = inFlightPreview_.find(buffer);
+            if (it == inFlightPreview_.end()) {
+                // flush() may have returned this frame while stop_preview()
+                // waited for the V4L2 callback to leave its critical section.
+                // Treat that stale callback as a cleanly drained frame.
+                ALOGV("Ignoring stale native frame buffer %p during transition", buffer);
+                return 0;
+            }
+            frame = it->second;
+            inFlightPreview_.erase(it);
+            scratch = scratchPreviewBufferForHandle(buffer);
+        }
+        if (frame == nullptr) {
+            return 0;
+        }
+
+        bool resultQueued = false;
+        if (error || frame->generation != sessionGeneration_.load()) {
+            failFrame(frame);
+        } else {
+            camera3_stream_buffer_t* previewSource = scratch != nullptr
+                    ? &scratch->buffer
+                    : (frame->previewBuffer.has_value() ? &*frame->previewBuffer : nullptr);
+            const bool metadataReturned = frame->metadataReturned;
+
+            int videoRc = 0;
+            int analysisRc = 0;
+            if (frame->videoBuffer.has_value()) {
+                videoRc = videoBlitPrepared
+                        ? preparedVideoRc
+                        : copyNativeNv21ToBuffer(
+                                  frame, recordingData, recordingSize,
+                                  recordingYAddr, recordingCbcrAddr,
+                                  nativeVideoWidth_, nativeVideoHeight_,
+                                  &*frame->videoBuffer);
+            }
+            if (frame->analysisBuffer.has_value()) {
+                analysisRc = copyPreviewToAnalysis(frame, previewSource);
+            }
+
+            /*
+             * A Camera3 capture result may contain all buffers for a frame.
+             * Returning preview, video and metadata in separate callbacks
+             * forced multiple synchronous provider/BufferQueue round trips
+             * and held both FIMC capture nodes for another frame interval.
+             */
+            std::array<camera3_stream_buffer_t, 3> completedBuffers{};
+            uint32_t completedBufferCount = 0;
+            if (frame->previewBuffer.has_value()) {
+                completedBuffers[completedBufferCount++] = *frame->previewBuffer;
+            }
+            if (frame->videoBuffer.has_value()) {
+                camera3_stream_buffer_t video = *frame->videoBuffer;
+                if (videoRc != 0) {
+                    prepareErrorBuffer(&video);
+                }
+                completedBuffers[completedBufferCount++] = video;
+            }
+            if (frame->analysisBuffer.has_value()) {
+                camera3_stream_buffer_t analysis = *frame->analysisBuffer;
+                if (analysisRc != 0) {
+                    prepareErrorBuffer(&analysis);
+                }
+                completedBuffers[completedBufferCount++] = analysis;
+            }
+            if (completedBufferCount != 0 || !metadataReturned) {
+                NativeResultJob job;
+                job.frame = frame;
+                job.buffers = completedBuffers;
+                job.bufferCount = completedBufferCount;
+                job.sendShutter = true;
+                job.includeMetadata = !metadataReturned;
+                queueNativeResult(std::move(job));
+                resultQueued = true;
+            }
+        }
+
+        if (scratch != nullptr) {
+            {
+                std::lock_guard<std::mutex> lock(stateMutex_);
+                scratch->inUse = false;
+            }
+            previewCv_.notify_all();
+        }
+
+        // Completed buffers remain owned by the FIFO result worker until it
+        // has called process_capture_result(). A whole-frame failure remains
+        // synchronous because no successful shutter/result is produced.
+        if (resultQueued) {
+            return 0;
+        }
+        if (error || frame->generation != sessionGeneration_.load()) {
+            return 0;
+        }
+        if (!frame->previewBuffer.has_value() && !frame->videoBuffer.has_value() &&
+            !frame->analysisBuffer.has_value() && frame->jpegBuffer.has_value()) {
+            {
+                std::lock_guard<std::mutex> lock(stateMutex_);
+                pendingJpeg_ = frame;
+                previewAbort_ = true;
+            }
+            previewCv_.notify_all();
+            postTask(WorkerTask::TakePicture, frame->generation);
+        }
+        return 0;
     }
 
     int completePreview(buffer_handle_t* buffer, bool error) {
@@ -2257,7 +3329,7 @@ private:
             }
             const auto it = inFlightPreview_.find(buffer);
             if (it == inFlightPreview_.end()) {
-                ALOGW("HAL1 returned an unknown preview buffer %p", buffer);
+                ALOGW("V4L2 backend returned an unknown preview buffer %p", buffer);
                 return -ENOENT;
             }
             frame = it->second;
@@ -2310,6 +3382,7 @@ private:
             camera3_stream_buffer_t* derived = nullptr;
             int derivedRc = 0;
             int analysisRc = 0;
+            bool sourceReturned = false;
 
             if (source != nullptr && frame->previewBuffer.has_value() &&
                 frame->videoBuffer.has_value()) {
@@ -2318,37 +3391,59 @@ private:
                 } else if (source == &*frame->previewBuffer) {
                     derived = &*frame->videoBuffer;
                 }
-                derivedRc = derived != nullptr
-                        ? copyNv21Buffer(frame, *source, *derived)
-                        : -EINVAL;
+                if (derived == nullptr) {
+                    derivedRc = -EINVAL;
+                } else {
+                    // For the CameraX 720p recording layout, make a private
+                    // CPU copy for the scaler and release the encoder buffer
+                    // immediately. The old synchronous crop/downscale held
+                    // one of only three V4L2 buffers for tens of milliseconds,
+                    // starving the sensor queue and reducing video to ~11 fps.
+                    const bool canUsePreviewCache =
+                            source == &*frame->videoBuffer &&
+                            derived == &*frame->previewBuffer &&
+                            !frame->analysisBuffer.has_value() &&
+                            schedulePreviewCacheUpdate(*source, frame->generation);
+                    if (canUsePreviewCache) {
+                        sendResult(frame, *source, !metadataReturned);
+                        metadataReturned = true;
+                        sourceReturned = true;
+                        derivedRc = copyPreviewCacheToBuffer(frame, *derived);
+                    } else {
+                        // The first frame seeds the cache synchronously. This
+                        // also remains the safe path for other stream layouts
+                        // and ImageAnalysis requests that still read source.
+                        derivedRc = copyNv21Buffer(frame, *source, *derived);
+                    }
+                }
             }
             if (frame->analysisBuffer.has_value()) {
                 analysisRc = copyPreviewToAnalysis(frame, source);
             }
 
-            // Do not return the direct HAL1 source buffer until every derived
+            // Do not return the direct V4L2 source buffer until every derived
             // output has finished reading it. Once process_capture_result() is
             // called, the framework may immediately recycle that buffer.
-            if (source != nullptr) {
+            if (source != nullptr && !sourceReturned) {
                 sendResult(frame, *source, !metadataReturned);
                 metadataReturned = true;
-                if (derived != nullptr) {
-                    if (derivedRc == 0) {
-                        sendResult(frame, *derived, !metadataReturned);
-                        metadataReturned = true;
-                    } else {
-                        sendBufferError(frame->frameNumber, *derived);
-                    }
-                }
             } else {
                 // A configured non-scratch frame must always have a direct
                 // preview source. Return every affected output explicitly so
                 // CameraService cannot wait forever for a missing buffer.
-                if (frame->previewBuffer.has_value()) {
+                if (source == nullptr && frame->previewBuffer.has_value()) {
                     sendBufferError(frame->frameNumber, *frame->previewBuffer);
                 }
-                if (frame->videoBuffer.has_value()) {
+                if (source == nullptr && frame->videoBuffer.has_value()) {
                     sendBufferError(frame->frameNumber, *frame->videoBuffer);
+                }
+            }
+            if (derived != nullptr) {
+                if (derivedRc == 0) {
+                    sendResult(frame, *derived, !metadataReturned);
+                    metadataReturned = true;
+                } else {
+                    sendBufferError(frame->frameNumber, *derived);
                 }
             }
             if (frame->analysisBuffer.has_value()) {
@@ -2387,23 +3482,9 @@ private:
         return 0;
     }
 
-    static int previewSetBufferCount(preview_stream_ops_t*, int) { return 0; }
-    static int previewSetBuffersGeometry(preview_stream_ops_t*, int, int, int) { return 0; }
-    static int previewSetCrop(preview_stream_ops_t*, int, int, int, int) { return 0; }
-    static int previewSetUsage(preview_stream_ops_t*, int) { return 0; }
-    static int previewSetSwapInterval(preview_stream_ops_t*, int) { return 0; }
-    static int previewGetMinUndequeuedCount(const preview_stream_ops_t*, int* count) {
-        if (count == nullptr) return -EINVAL;
-        // The Exynos4 HAL expects a conventional BufferQueue reserve.
-        *count = 2;
-        return 0;
-    }
-    static int previewLockBuffer(preview_stream_ops_t*, buffer_handle_t*) { return 0; }
-    static int previewSetTimestamp(preview_stream_ops_t*, int64_t) { return 0; }
-
-    static void legacyNotifyCallback(int32_t messageType, int32_t ext1, int32_t,
+    static void backendNotifyCallback(int32_t messageType, int32_t ext1, int32_t,
                                      void* user) {
-        auto* self = static_cast<Camera3Shim*>(user);
+        auto* self = static_cast<NativeCamera3Device*>(user);
         if (self == nullptr) return;
         if (messageType == CAMERA_MSG_FOCUS) {
             self->afState_.store(ext1 != 0
@@ -2420,15 +3501,15 @@ private:
         }
     }
 
-    static void legacyDataCallback(int32_t messageType, const camera_memory_t* data,
+    static void backendDataCallback(int32_t messageType, const camera_memory_t* data,
                                    unsigned int index, camera_frame_metadata_t*, void* user) {
-        auto* self = static_cast<Camera3Shim*>(user);
+        auto* self = static_cast<NativeCamera3Device*>(user);
         if (self != nullptr && messageType == CAMERA_MSG_COMPRESSED_IMAGE) {
             self->handleJpeg(data, index);
         }
     }
 
-    static void legacyTimestampCallback(int64_t, int32_t, const camera_memory_t*,
+    static void backendTimestampCallback(int64_t, int32_t, const camera_memory_t*,
                                         unsigned int, void*) {}
 
     void handleJpeg(const camera_memory_t* memory, unsigned int index) {
@@ -2436,8 +3517,8 @@ private:
         bool callbackActive = false;
         {
             std::lock_guard<std::mutex> lock(stateMutex_);
-            // The legacy picture thread is detached. flush() must wait until
-            // every callback has stopped touching this shim, including a stale
+            // The picture thread is detached. flush() must wait until
+            // every callback has stopped touching this HAL instance, including a stale
             // callback whose pending request was already removed.
             ++jpegCallbacksActive_;
             callbackActive = true;
@@ -2557,14 +3638,30 @@ private:
     int id_;
     camera3_device_t device_{};
     camera3_device_ops_t ops_{};
-    camera_device_t* legacyDevice_ = nullptr;
+    exynos_camera* backend_ = nullptr;
     const gralloc_module_t* gralloc_ = nullptr;
     alloc_device_t* grallocAlloc_ = nullptr;
+    SecFimc videoBlitter_;
+    int videoBlitterWidth_ = 0;
+    int videoBlitterHeight_ = 0;
+    int videoBlitterDestinationWidth_ = 0;
+    int videoBlitterDestinationHeight_ = 0;
+    int videoBlitterFormat_ = 0;
+    std::vector<buffer_handle_t> videoPillarboxBuffers_;
+    SecFimc previewBlitter_;
+    int previewBlitterWidth_ = 0;
+    int previewBlitterHeight_ = 0;
+    int previewBlitterSourceWidth_ = 0;
+    int previewBlitterSourceHeight_ = 0;
+    int previewBlitterFormat_ = 0;
+    bool previewBlitterUnavailable_ = false;
+    std::vector<buffer_handle_t> previewLetterboxBuffers_;
     const camera3_callback_ops_t* callbacks_ = nullptr;
-    PreviewWindow previewWindow_{};
-
+    // Camera3 permits result callbacks from different HAL threads, but never
+    // more than one process_capture_result() call at a time.
+    std::mutex callbackMutex_;
     std::mutex stateMutex_;
-    std::mutex legacyOpsMutex_;
+    std::mutex backendOpsMutex_;
     std::condition_variable previewCv_;
     std::condition_variable stillCv_;
     std::condition_variable workerCv_;
@@ -2577,6 +3674,55 @@ private:
     std::deque<WorkerCommand> workerTasks_;
     std::thread worker_;
 
+    std::mutex resultMutex_;
+    std::condition_variable resultCv_;
+    std::condition_variable resultIdleCv_;
+    std::deque<NativeResultJob> resultQueue_;
+    std::thread resultWorker_;
+    bool resultWorkerExit_ = false;
+    bool resultWorkerActive_ = false;
+
+    std::mutex videoBlitMutex_;
+    std::condition_variable videoBlitCv_;
+    std::condition_variable videoBlitDoneCv_;
+    std::thread videoBlitWorker_;
+    NativeVideoBlitJob videoBlitJob_{};
+    bool videoBlitExit_ = false;
+    bool videoBlitPending_ = false;
+    bool videoBlitActive_ = false;
+    uint64_t videoBlitSubmittedSequence_ = 0;
+    uint64_t videoBlitCompletedSequence_ = 0;
+    int videoBlitResult_ = 0;
+
+    std::mutex previewScalerMutex_;
+    std::condition_variable previewScalerCv_;
+    std::thread previewScalerWorker_;
+    std::vector<uint8_t> previewScaleInput_;
+    std::vector<uint8_t> previewScaleOutput_;
+    std::vector<uint8_t> previewCache_;
+    bool previewScalerExit_ = false;
+    bool previewScalePending_ = false;
+    bool previewScaleActive_ = false;
+    bool previewCacheValid_ = false;
+    uint32_t previewScalerGeneration_ = 0;
+    uint32_t previewScaleJobGeneration_ = 0;
+    uint32_t previewCacheGeneration_ = 0;
+    int64_t previewScaleLastQueuedNs_ = 0;
+    int64_t nativeFrameWindowStartNs_ = 0;
+    uint32_t nativeFrameCount_ = 0;
+    int64_t nativeFrameProcessingNs_ = 0;
+    int64_t nativeDequeueWaitNs_ = 0;
+    int64_t nativePreviewCopyNs_ = 0;
+    std::atomic<int64_t> nativeResultDeliveryNs_{0};
+    std::atomic<uint32_t> nativeResultDeliveryCount_{0};
+    std::atomic<int64_t> nativeShutterDeliveryNs_{0};
+    std::atomic<uint32_t> nativeShutterDeliveryCount_{0};
+    uint32_t previewDmaCount_ = 0;
+    uint32_t previewCpuCopyCount_ = 0;
+    uint32_t videoBlitCount_ = 0;
+    int64_t videoFenceWaitNs_ = 0;
+    int64_t videoBlitProcessingNs_ = 0;
+
     camera3_stream_t* previewStream_ = nullptr;
     camera3_stream_t* videoStream_ = nullptr;
     camera3_stream_t* analysisStream_ = nullptr;
@@ -2584,8 +3730,12 @@ private:
     camera3_stream_t* jpegStream_ = nullptr;
     int previewWidth_ = 0;
     int previewHeight_ = 0;
+    int nativePreviewWidth_ = 0;
+    int nativePreviewHeight_ = 0;
     int videoWidth_ = 0;
     int videoHeight_ = 0;
+    int nativeVideoWidth_ = 0;
+    int nativeVideoHeight_ = 0;
     int analysisWidth_ = 0;
     int analysisHeight_ = 0;
     int jpegWidth_ = 0;
@@ -2613,7 +3763,7 @@ private:
 std::mutex gModuleCallbackMutex;
 const camera_module_callbacks_t* gModuleCallbacks = nullptr;
 std::mutex gTorchMutex;
-camera_device_t* gTorchDevice = nullptr;
+exynos_camera* gTorchBackend = nullptr;
 hw_module_methods_t gModuleMethods{};
 
 void notifyTorchStatus(int status) {
@@ -2627,68 +3777,52 @@ void notifyTorchStatus(int status) {
     }
 }
 
-void closeLegacyCameraDevice(camera_device_t* device) {
-    if (device == nullptr) {
-        return;
-    }
-    if (device->common.close != nullptr) {
-        device->common.close(&device->common);
-    } else if (device->ops != nullptr && device->ops->release != nullptr) {
-        device->ops->release(device);
-    }
-}
-
-int setLegacyTorchParameter(camera_device_t* device, bool enabled) {
-    if (device == nullptr || device->ops == nullptr ||
-        device->ops->get_parameters == nullptr ||
-        device->ops->set_parameters == nullptr) {
+int setBackendTorchParameter(exynos_camera* backend, bool enabled) {
+    if (backend == nullptr) {
         return -ENODEV;
     }
 
-    char* oldParameters = device->ops->get_parameters(device);
+    char* oldParameters = exynos_camera_backend_get_parameters(backend);
     ParameterMap parameters(oldParameters);
     if (oldParameters != nullptr) {
-        if (device->ops->put_parameters != nullptr) {
-            device->ops->put_parameters(device, oldParameters);
-        } else {
-            free(oldParameters);
-        }
+        exynos_camera_backend_free_parameters(oldParameters);
     }
 
     parameters.set("flash-mode", enabled ? "torch" : "off");
     const std::string flattened = parameters.flatten();
-    return device->ops->set_parameters(device, flattened.c_str());
+    return exynos_camera_backend_set_parameters(backend, flattened.c_str());
 }
 
 void releaseTorchForCameraOpen() {
     std::lock_guard<std::mutex> lock(gTorchMutex);
-    if (gTorchDevice == nullptr) {
+    if (gTorchBackend == nullptr) {
         return;
     }
-    setLegacyTorchParameter(gTorchDevice, false);
-    closeLegacyCameraDevice(gTorchDevice);
-    gTorchDevice = nullptr;
+    setBackendTorchParameter(gTorchBackend, false);
+    exynos_camera_backend_close(gTorchBackend);
+    gTorchBackend = nullptr;
 }
 
 int getNumberOfCameras() {
-    return LegacyModule::get().cameraCount();
+    return std::clamp(exynos_camera_backend_get_number_of_cameras(), 0, kMaxCameras);
 }
 
 int getCameraInfo(int cameraId, camera_info* info) {
     if (info == nullptr || cameraId < 0 || cameraId >= getNumberOfCameras()) {
         return -EINVAL;
     }
-    camera_info legacyInfo{};
-    int rc = LegacyModule::get().cameraInfo(cameraId, &legacyInfo);
+    int facing = 0;
+    int orientation = 0;
+    int rc = exynos_camera_backend_get_camera_info(cameraId, &facing, &orientation);
     if (rc != 0) {
         return rc;
     }
     memset(info, 0, sizeof(*info));
-    info->facing = legacyInfo.facing;
-    info->orientation = legacyInfo.orientation;
+    info->facing = facing;
+    info->orientation = orientation;
     info->device_version = CAMERA_DEVICE_API_VERSION_3_2;
     info->static_camera_characteristics = getStaticMetadata(
-            cameraId, legacyInfo.facing, legacyInfo.orientation);
+            cameraId, facing, orientation);
     info->resource_cost = 100;
     return info->static_camera_characteristics == nullptr ? -ENOMEM : 0;
 }
@@ -2724,34 +3858,34 @@ int setTorchMode(const char* idString, bool enabled) {
 
     std::lock_guard<std::mutex> lock(gTorchMutex);
     if (enabled) {
-        if (gTorchDevice != nullptr) {
+        if (gTorchBackend != nullptr) {
             notifyTorchStatus(TORCH_MODE_STATUS_AVAILABLE_ON);
             return 0;
         }
 
-        camera_device_t* device = nullptr;
-        int rc = LegacyModule::get().openCamera(0, &device);
-        if (rc != 0 || device == nullptr) {
+        exynos_camera* backend = nullptr;
+        int rc = exynos_camera_backend_open(0, &backend);
+        if (rc != 0 || backend == nullptr) {
             notifyTorchStatus(TORCH_MODE_STATUS_AVAILABLE_OFF);
             return rc != 0 ? rc : -ENODEV;
         }
 
-        rc = setLegacyTorchParameter(device, true);
+        rc = setBackendTorchParameter(backend, true);
         if (rc != 0) {
-            closeLegacyCameraDevice(device);
+            exynos_camera_backend_close(backend);
             notifyTorchStatus(TORCH_MODE_STATUS_AVAILABLE_OFF);
             return rc;
         }
 
-        gTorchDevice = device;
+        gTorchBackend = backend;
         notifyTorchStatus(TORCH_MODE_STATUS_AVAILABLE_ON);
         return 0;
     }
 
-    if (gTorchDevice != nullptr) {
-        const int rc = setLegacyTorchParameter(gTorchDevice, false);
-        closeLegacyCameraDevice(gTorchDevice);
-        gTorchDevice = nullptr;
+    if (gTorchBackend != nullptr) {
+        const int rc = setBackendTorchParameter(gTorchBackend, false);
+        exynos_camera_backend_close(gTorchBackend);
+        gTorchBackend = nullptr;
         notifyTorchStatus(TORCH_MODE_STATUS_AVAILABLE_OFF);
         return rc;
     }
@@ -2761,7 +3895,7 @@ int setTorchMode(const char* idString, bool enabled) {
 }
 
 int initModule() {
-    return LegacyModule::get().ensureLoaded() ? 0 : -ENODEV;
+    return getNumberOfCameras() > 0 ? 0 : -ENODEV;
 }
 
 int openCamera(const hw_module_t* module, const char* idString, hw_device_t** device) {
@@ -2778,8 +3912,8 @@ int openCamera(const hw_module_t* module, const char* idString, hw_device_t** de
         notifyTorchStatus(TORCH_MODE_STATUS_NOT_AVAILABLE);
     }
 
-    auto camera = std::make_unique<Camera3Shim>(static_cast<int>(id));
-    int rc = camera->openLegacy();
+    auto camera = std::make_unique<NativeCamera3Device>(static_cast<int>(id));
+    int rc = camera->openBackend();
     if (rc != 0) {
         if (id == 0) {
             notifyTorchStatus(TORCH_MODE_STATUS_AVAILABLE_OFF);
@@ -2787,20 +3921,20 @@ int openCamera(const hw_module_t* module, const char* idString, hw_device_t** de
         return rc;
     }
     camera->device()->common.module = const_cast<hw_module_t*>(module);
-    Camera3Shim* rawCamera = camera.release();
+    NativeCamera3Device* rawCamera = camera.release();
     *device = &rawCamera->device()->common;
     return 0;
 }
 
 }  // namespace
-}  // namespace n7000::camera3
+}  // namespace camera3
 
 extern "C" {
 
 __attribute__((visibility("default"))) camera_module_t HAL_MODULE_INFO_SYM;
 
 __attribute__((constructor)) static void initializeCameraModule() {
-    using namespace n7000::camera3;
+    using namespace camera3;
     memset(&HAL_MODULE_INFO_SYM, 0, sizeof(HAL_MODULE_INFO_SYM));
     memset(&gModuleMethods, 0, sizeof(gModuleMethods));
     gModuleMethods.open = openCamera;
@@ -2809,7 +3943,7 @@ __attribute__((constructor)) static void initializeCameraModule() {
     HAL_MODULE_INFO_SYM.common.module_api_version = CAMERA_MODULE_API_VERSION_2_4;
     HAL_MODULE_INFO_SYM.common.hal_api_version = HARDWARE_HAL_API_VERSION;
     HAL_MODULE_INFO_SYM.common.id = CAMERA_HARDWARE_MODULE_ID;
-    HAL_MODULE_INFO_SYM.common.name = "N7000 HAL3 to HAL1 C ABI wrapper";
+    HAL_MODULE_INFO_SYM.common.name = "Camera3 Exynos V4L2 HAL";
     HAL_MODULE_INFO_SYM.common.author = "ZhafKnight";
     HAL_MODULE_INFO_SYM.common.methods = &gModuleMethods;
     HAL_MODULE_INFO_SYM.get_number_of_cameras = getNumberOfCameras;

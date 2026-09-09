@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2013 Paul Kocialkowski
+ * Native Camera3 integration Copyright (C) 2026 ZhafKnight
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -181,8 +182,15 @@ struct exynos_camera_callbacks {
 	void *user;
 };
 
+typedef int (*exynos_camera_frame_callback)(const void *preview_data,
+	size_t preview_size, const void *recording_data, size_t recording_size,
+	uint32_t preview_y_addr, uint32_t preview_cbcr_addr,
+	uint32_t recording_y_addr, uint32_t recording_cbcr_addr,
+	int64_t timestamp_ns, void *user);
+
 struct exynos_camera {
 	int v4l2_fds[EXYNOS_CAMERA_MAX_V4L2_NODES_COUNT];
+	int camera_id;
 
 	struct exynox_camera_config *config;
 	struct exynos_param *params;
@@ -196,15 +204,18 @@ struct exynos_camera {
 	pthread_t picture_thread;
 	pthread_mutex_t picture_mutex;
 	int picture_thread_running;
+	int picture_thread_started;
 
 	int picture_enabled;
 	camera_memory_t *picture_memory;
 	int picture_buffer_length;
+	int picture_rotation;
 
 	// Auto-focus
 	pthread_t auto_focus_thread;
 	pthread_mutex_t auto_focus_mutex;
 	int auto_focus_thread_running;
+	int auto_focus_thread_started;
 
 	int auto_focus_enabled;
 
@@ -222,9 +233,13 @@ struct exynos_camera {
 	int preview_buffers_count;
 	int preview_frame_size;
 	int preview_params_set;
+	int preview_poll_timeouts;
+	exynos_camera_frame_callback frame_callback;
+	void *frame_callback_user;
 
 	// Recording
 	pthread_mutex_t recording_mutex;
+	int synchronization_initialized;
 
 	int recording_enabled;
 	int recording_msg_start;
@@ -232,6 +247,11 @@ struct exynos_camera {
 	int recording_msg_stop;
 	camera_memory_t *recording_memory;
 	int recording_buffers_count;
+	int recording_frame_size;
+	void *recording_staging;
+	size_t recording_staging_size;
+	int recording_poll_timeouts;
+	int native_recording_stream;
 
 	// Camera params
 	int camera_rotation;
@@ -309,6 +329,7 @@ void exynos_camera_auto_focus_stop(struct exynos_camera *exynos_camera);
 
 int exynos_camera_picture(struct exynos_camera *exynos_camera);
 int exynos_camera_picture_start(struct exynos_camera *exynos_camera);
+void exynos_camera_picture_stop(struct exynos_camera *exynos_camera);
 
 int exynos_camera_preview(struct exynos_camera *exynos_camera);
 int exynos_camera_preview_start(struct exynos_camera *exynos_camera);

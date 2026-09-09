@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2013 Paul Kocialkowski
+ * Integrated into the smdk4210 native Camera3 module.
  *
  * Based on crespo libcamera and exynos4 hal libcamera:
  * Copyright 2008, The Android Open Source Project
@@ -159,9 +160,9 @@ int exynos_exif_attributes_create_gps(struct exynos_camera *exynos_camera,
 		exif_attributes->gps_altitude_ref = 1;
 
 
-	gps_latitude_abs = fabs(gps_latitude);
-	gps_longitude_abs = fabs(gps_longitude);
-	gps_altitude_abs = fabs(gps_altitude);
+	gps_latitude_abs = (double) labs(gps_latitude);
+	gps_longitude_abs = (double) labs(gps_longitude);
+	gps_altitude_abs = (double) labs(gps_altitude);
 
 	exif_attributes->gps_latitude[0].num = (uint32_t) gps_latitude_abs;
 	exif_attributes->gps_latitude[0].den = 10000000;
@@ -204,7 +205,6 @@ int exynos_exif_attributes_create_params(struct exynos_camera *exynos_camera,
 	struct tm *time_info;
 	int rotation;
 	int shutter_speed;
-	int exposure_time;
 	int iso_speed;
 	int exposure;
 	int flash_results;
@@ -224,7 +224,8 @@ int exynos_exif_attributes_create_params(struct exynos_camera *exynos_camera,
 	exif_attributes->enableThumb = true;
 
 	// Orientation
-	rotation = exynos_param_int_get(exynos_camera, "rotation");
+	/* picture_rotation is snapshotted before asynchronous capture starts. */
+	rotation = exynos_camera->picture_rotation;
 	switch (rotation) {
 		case 90:
 			exif_attributes->orientation = EXIF_ORIENTATION_90;

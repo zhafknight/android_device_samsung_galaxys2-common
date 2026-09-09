@@ -1,4 +1,4 @@
-#define LOG_TAG "N7000Camera3Metadata"
+#define LOG_TAG "Camera3Metadata"
 
 #include "Metadata.h"
 
@@ -11,7 +11,7 @@
 #include <mutex>
 #include <vector>
 
-namespace n7000::camera3 {
+namespace camera3 {
 namespace {
 
 constexpr CameraDescriptor kDescriptors[] = {
@@ -54,8 +54,8 @@ void appendDuration(std::vector<int64_t>* durations, int64_t format, int width, 
 
 std::vector<std::pair<int, int>> previewSizes(int id) {
     if (id == 0) {
-        return {{1280, 720}, {800, 480}, {720, 480}, {640, 480},
-                {352, 288}, {320, 240}, {176, 144}};
+        return {{1920, 1080}, {1280, 720}, {800, 480}, {720, 480}, {640, 480},
+                {640, 360}, {352, 288}, {320, 240}, {176, 144}};
     }
     return {{640, 480}, {352, 288}, {320, 240}, {176, 144}};
 }
@@ -79,10 +79,20 @@ camera_metadata_t* buildStaticMetadataInternal(int id, int facing, int orientati
             ? ANDROID_LENS_FACING_FRONT
             : ANDROID_LENS_FACING_BACK;
     const int32_t sensorOrientation = orientation;
-    const uint8_t hardwareLevel = ANDROID_INFO_SUPPORTED_HARDWARE_LEVEL_LEGACY;
+    /*
+     * The native HAL has independent FIMC0 preview and FIMC2 recording
+     * outputs, including the guaranteed LIMITED preview + record stream
+     * combination.  Advertising LEGACY makes CameraX collapse FHD preview
+     * and recording into one 1920x1080 SurfaceTexture.  Its GL processor then
+     * rotates that into 1080x1920 RGBA encoder buffers, bypassing the native
+     * FIMC2 -> FIMC1 -> MFC path and exceeding the practical Exynos4 graphics
+     * bandwidth.  Report the stream capability that this HAL actually owns so
+     * CameraX supplies the encoder surface directly to Camera3.
+     */
+    const uint8_t hardwareLevel = ANDROID_INFO_SUPPORTED_HARDWARE_LEVEL_LIMITED;
     const uint8_t capability = ANDROID_REQUEST_AVAILABLE_CAPABILITIES_BACKWARD_COMPATIBLE;
     const uint8_t timestampSource = ANDROID_SENSOR_INFO_TIMESTAMP_SOURCE_UNKNOWN;
-    const int32_t syncLatency = ANDROID_SYNC_MAX_LATENCY_UNKNOWN;
+    const int32_t syncLatency = 2;
     const uint8_t pipelineDepth = 2;
     const int32_t partialCount = 1;
     const uint8_t flashAvailable = id == 0 ? 1 : 0;
@@ -164,8 +174,8 @@ camera_metadata_t* buildStaticMetadataInternal(int id, int facing, int orientati
     add(metadata, ANDROID_SCALER_AVAILABLE_STALL_DURATIONS,
         stallDurations.data(), stallDurations.size());
 
-    // The back camera exposes the exact 1.0x-4.0x HAL1 zoom table.
-    // Camera2 crop regions are translated to the nearest legacy zoom index.
+    // The back camera exposes the M5MO sensor's exact 1.0x-4.0x zoom table.
+    // Camera3 crop regions are translated to the nearest sensor zoom index.
     const float maxDigitalZoom = id == 0 ? 4.0f : 1.0f;
     const uint8_t croppingType = ANDROID_SCALER_CROPPING_TYPE_CENTER_ONLY;
     add(metadata, ANDROID_SCALER_AVAILABLE_MAX_DIGITAL_ZOOM, &maxDigitalZoom, 1);
@@ -181,7 +191,7 @@ camera_metadata_t* buildStaticMetadataInternal(int id, int facing, int orientati
     const std::array<int32_t, 2> aeCompensationRange = {-4, 4};
     const camera_metadata_rational_t aeCompensationStep = {1, 2};
     // Keep Camera2 characteristics consistent with the encoder profiles.
-    // The legacy front sensor is driven at its stable 15 fps internally, but
+    // The front sensor is driven at its stable 15 fps internally, but
     // the encoder profile and the original HAL3 compatibility contract expose
     // a 30 fps video target. CameraX/Aperture validates this metadata before
     // opening the front camera in video mode.
@@ -596,4 +606,4 @@ camera_metadata_t* buildResultMetadata(int id, int64_t timestamp, uint8_t afStat
     return metadata;
 }
 
-}  // namespace n7000::camera3
+}  // namespace camera3

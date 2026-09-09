@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2013 Paul Kocialkowski
+ * Integrated into the smdk4210 native Camera3 module.
  *
  * Based on crespo libcamera and exynos4 hal libcamera:
  * Copyright 2008, The Android Open Source Project
@@ -188,6 +189,7 @@ int exynos_v4l2_qbuf(struct exynos_camera *exynos_camera, int exynos_v4l2_id,
 	if (exynos_camera == NULL || index < 0)
 		return -EINVAL;
 
+	memset(&buffer, 0, sizeof(buffer));
 	buffer.type = type;
 	buffer.memory = memory;
 	buffer.index = index;
@@ -258,6 +260,7 @@ int exynos_v4l2_reqbufs(struct exynos_camera *exynos_camera, int exynos_v4l2_id,
 	if (exynos_camera == NULL || count < 0)
 		return -EINVAL;
 
+	memset(&requestbuffers, 0, sizeof(requestbuffers));
 	requestbuffers.type = type;
 	requestbuffers.count = count;
 	requestbuffers.memory = memory;
@@ -331,6 +334,7 @@ int exynos_v4l2_querycap(struct exynos_camera *exynos_camera, int exynos_v4l2_id
 	if (exynos_camera == NULL)
 		return -EINVAL;
 
+	memset(&cap, 0, sizeof(cap));
 	rc = exynos_v4l2_ioctl(exynos_camera, exynos_v4l2_id, VIDIOC_QUERYCAP, &cap);
 	if (rc < 0) {
 		ALOGE("%s: ioctl failed", __func__);
@@ -422,6 +426,7 @@ int exynos_v4l2_g_fmt(struct exynos_camera *exynos_camera, int exynos_v4l2_id,
 	if (exynos_camera == NULL)
 		return -EINVAL;
 
+	memset(&format, 0, sizeof(format));
 	format.type = type;
 	format.fmt.pix.field = V4L2_FIELD_NONE;
 
@@ -530,6 +535,7 @@ int exynos_v4l2_enum_fmt(struct exynos_camera *exynos_camera, int exynos_v4l2_id
 	if (exynos_camera == NULL)
 		return -EINVAL;
 
+	memset(&fmtdesc, 0, sizeof(fmtdesc));
 	fmtdesc.type = type;
 	fmtdesc.index = 0;
 
@@ -572,6 +578,7 @@ int exynos_v4l2_enum_input(struct exynos_camera *exynos_camera, int exynos_v4l2_
 	if (exynos_camera == NULL || id < 0)
 		return -EINVAL;
 
+	memset(&input, 0, sizeof(input));
 	input.index = id;
 
 	rc = exynos_v4l2_ioctl(exynos_camera, exynos_v4l2_id, VIDIOC_ENUMINPUT, &input);
@@ -595,6 +602,7 @@ int exynos_v4l2_s_input(struct exynos_camera *exynos_camera, int exynos_v4l2_id,
 	if (exynos_camera == NULL || id < 0)
 		return -EINVAL;
 
+	memset(&input, 0, sizeof(input));
 	input.index = id;
 
 	rc = exynos_v4l2_ioctl(exynos_camera, exynos_v4l2_id, VIDIOC_S_INPUT, &input);
@@ -638,6 +646,7 @@ int exynos_v4l2_g_ctrl(struct exynos_camera *exynos_camera, int exynos_v4l2_id,
 	if (exynos_camera == NULL)
 		return -EINVAL;
 
+	memset(&control, 0, sizeof(control));
 	control.id = id;
 
 	rc = exynos_v4l2_ioctl(exynos_camera, exynos_v4l2_id, VIDIOC_G_CTRL, &control);
@@ -661,6 +670,7 @@ int exynos_v4l2_s_ctrl(struct exynos_camera *exynos_camera, int exynos_v4l2_id,
 	if (exynos_camera == NULL)
 		return -EINVAL;
 
+	memset(&control, 0, sizeof(control));
 	control.id = id;
 	control.value = value;
 
@@ -715,6 +725,7 @@ int exynos_v4l2_s_crop(struct exynos_camera *exynos_camera, int exynos_v4l2_id,
 	if (exynos_camera == NULL)
 		return -EINVAL;
 
+	memset(&crop, 0, sizeof(crop));
 	crop.type = type;
 	crop.c.left = left;
 	crop.c.top = top;
@@ -753,6 +764,7 @@ int exynos_v4l2_g_fbuf(struct exynos_camera *exynos_camera, int exynos_v4l2_id,
 	if (exynos_camera == NULL)
 		return -EINVAL;
 
+	memset(&framebuffer, 0, sizeof(framebuffer));
 	rc = exynos_v4l2_ioctl(exynos_camera, exynos_v4l2_id, VIDIOC_G_FBUF, &framebuffer);
 	if (rc < 0) {
 		ALOGE("%s: ioctl failed", __func__);

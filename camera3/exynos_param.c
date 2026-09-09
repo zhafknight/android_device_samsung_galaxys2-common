@@ -1,5 +1,6 @@
 /*
  * Copyright (C) 2013 Paul Kocialkowski
+ * Integrated into the smdk4210 native Camera3 module.
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
@@ -134,7 +135,6 @@ void exynos_param_unregister(struct exynos_camera *exynos_camera,
 			break;
 		}
 
-list_continue:
 		list = list->next;
 	}
 }

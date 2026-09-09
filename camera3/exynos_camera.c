@@ -1,7 +1,7 @@
 /*
  * Copyright (C) 2013 Paul Kocialkowski
  *
- * Based on crespo libcamera and exynos4 hal libcamera:
+ * Native Camera3 backend based on crespo libcamera and exynos4 hal libcamera:
  * Copyright 2008, The Android Open Source Project
  * Copyright 2010, Samsung Electronics Co. LTD
  *
@@ -30,6 +30,7 @@
 #include <sys/time.h>
 #include <sys/mman.h>
 #include <sys/ioctl.h>
+#include <sys/resource.h>
 
 #include <asm/types.h>
 #include <jpeg_api.h>
@@ -39,6 +40,9 @@
 #include <utils/Timers.h>
 
 #include "exynos_camera.h"
+#include "exynos_camera_backend.h"
+
+#define EXYNOS_CAMERA_PRIORITY_URGENT_DISPLAY (-8)
 
 /*
  * Devices configurations
@@ -58,7 +62,7 @@ struct exynos_camera_preset exynos_camera_presets_galaxys2[] = {
 		.vertical_view_angle = 47.1f,
 		.metering = METERING_CENTER,
 		.params = {
-			.preview_size_values = "1280x720,800x480,720x480,640x480,352x288,320x240,176x144",
+			.preview_size_values = "1920x1080,1280x720,800x480,720x480,640x480,640x360,352x288,320x240,176x144",
 			.preview_size = "1280x720",
 			.preview_format_values = "yuv420sp,yuv420p,rgb565",
 			.preview_format = "yuv420sp",
@@ -230,6 +234,30 @@ int exynos_camera_init(struct exynos_camera *exynos_camera, int id)
 
 	if (exynos_camera == NULL || id >= exynos_camera->config->presets_count)
 		return -EINVAL;
+	exynos_camera->camera_id = id;
+
+	/*
+	 * These locks protect the lifetime of the native backend, not one stream
+	 * invocation.  Initialising/destroying them for every start/stop left
+	 * preview_enabled set after a failed V4L2 setup and made the next flush
+	 * unlock a destroyed mutex.  Bionic correctly aborts that misuse.
+	 */
+	rc = pthread_mutex_init(&exynos_camera->picture_mutex, NULL);
+	if (rc != 0)
+		return -rc;
+	rc = pthread_mutex_init(&exynos_camera->auto_focus_mutex, NULL);
+	if (rc != 0)
+		goto error_picture_mutex;
+	rc = pthread_mutex_init(&exynos_camera->preview_mutex, NULL);
+	if (rc != 0)
+		goto error_auto_focus_mutex;
+	rc = pthread_mutex_init(&exynos_camera->preview_lock_mutex, NULL);
+	if (rc != 0)
+		goto error_preview_mutex;
+	rc = pthread_mutex_init(&exynos_camera->recording_mutex, NULL);
+	if (rc != 0)
+		goto error_preview_lock_mutex;
+	exynos_camera->synchronization_initialized = 1;
 
 	// Init FIMC1
 	rc = exynos_v4l2_open(exynos_camera, 0);
@@ -304,18 +332,48 @@ int exynos_camera_init(struct exynos_camera *exynos_camera, int id)
 		ALOGE("%s: Unable to get gralloc module", __func__);
 
 	return 0;
+
+error_preview_lock_mutex:
+	pthread_mutex_destroy(&exynos_camera->preview_lock_mutex);
+error_preview_mutex:
+	pthread_mutex_destroy(&exynos_camera->preview_mutex);
+error_auto_focus_mutex:
+	pthread_mutex_destroy(&exynos_camera->auto_focus_mutex);
+error_picture_mutex:
+	pthread_mutex_destroy(&exynos_camera->picture_mutex);
+	return -rc;
 }
 
 void exynos_camera_deinit(struct exynos_camera *exynos_camera)
 {
-	int i;
-	int id;
-
 	if (exynos_camera == NULL || exynos_camera->config == NULL)
 		return;
 
+	if (exynos_camera->picture_enabled || exynos_camera->picture_thread_started)
+		exynos_camera_picture_stop(exynos_camera);
+	if (exynos_camera->auto_focus_enabled || exynos_camera->auto_focus_thread_started)
+		exynos_camera_auto_focus_stop(exynos_camera);
+	if (exynos_camera->preview_enabled || exynos_camera->preview_thread_started ||
+		exynos_camera->preview_memory != NULL ||
+		exynos_camera->preview_buffers_count > 0)
+		exynos_camera_preview_stop(exynos_camera);
+	if (exynos_camera->recording_enabled ||
+		exynos_camera->recording_memory != NULL ||
+		exynos_camera->recording_staging != NULL ||
+		exynos_camera->recording_buffers_count > 0)
+		exynos_camera_recording_stop(exynos_camera);
+
 	exynos_v4l2_close(exynos_camera, 0);
 	exynos_v4l2_close(exynos_camera, 2);
+
+	if (exynos_camera->synchronization_initialized) {
+		pthread_mutex_destroy(&exynos_camera->recording_mutex);
+		pthread_mutex_destroy(&exynos_camera->preview_lock_mutex);
+		pthread_mutex_destroy(&exynos_camera->preview_mutex);
+		pthread_mutex_destroy(&exynos_camera->auto_focus_mutex);
+		pthread_mutex_destroy(&exynos_camera->picture_mutex);
+		exynos_camera->synchronization_initialized = 0;
+	}
 }
 
 // Params
@@ -487,8 +545,6 @@ int exynos_camera_handle_preview(struct exynos_camera *exynos_camera) {
 	bool use_fallback = true;
 	int fallback_width = 0;
 	int fallback_height = 0;
-	int camera_sensor_output_size;
-
 	char *preview_format_string;
 	int preview_format = V4L2_PIX_FMT_NV21;
 	float preview_format_bpp = 1.5f;
@@ -516,7 +572,7 @@ int exynos_camera_handle_preview(struct exynos_camera *exynos_camera) {
 		}
 
 		if (preview_format != exynos_camera->preview_format) {
-			ALOGD("preview-format: %s", __func__, preview_format_string);
+			ALOGD("%s: preview-format: %s", __func__, preview_format_string);
 			exynos_camera->preview_format = preview_format;
 			exynos_camera->preview_format_bpp = preview_format_bpp;
 		}
@@ -778,7 +834,6 @@ int exynos_camera_params_handle_scene_mode(struct exynos_camera *exynos_camera, 
 {
 	char *scene_mode_string;
 	int scene_mode = SCENE_MODE_NONE;
-	char *focus_mode_string;
 	int rc = 0;
 
 	// Scene mode
@@ -834,7 +889,7 @@ int exynos_camera_params_handle_scene_mode(struct exynos_camera *exynos_camera, 
 int exynos_camera_handle_picture(struct exynos_camera *exynos_camera, bool force)
 {
 	char *picture_format_string;
-	int picture_format;
+	int picture_format = exynos_camera->picture_format;
 	char *picture_size_string;
 	int picture_width = 0;
 	int picture_height = 0;
@@ -849,7 +904,8 @@ int exynos_camera_handle_picture(struct exynos_camera *exynos_camera, bool force
 		}
 	}
 	if (picture_format != exynos_camera->picture_format || force) {
-		ALOGD("picture-format: %s", __func__, picture_format_string);
+		ALOGD("%s: picture-format: %s", __func__,
+			picture_format_string != NULL ? picture_format_string : "jpeg");
 		exynos_camera->picture_format = picture_format;
 	}
 
@@ -943,7 +999,12 @@ void exynos_camera_params_handle_video_frame_format(struct exynos_camera *exynos
 	video_frame_format_string = exynos_param_string_get(exynos_camera, "video-frame-format");
 	if (video_frame_format_string != NULL) {
 		if (strcmp(video_frame_format_string, "yuv420sp") == 0) {
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+			/* Camera3's negotiated YCrCb_420_SP buffers are linear NV21. */
+			recording_format = V4L2_PIX_FMT_NV21;
+#else
 			recording_format = V4L2_PIX_FMT_NV12;
+#endif
 		} else if (strcmp(video_frame_format_string, "yuv420p") == 0) {
 			recording_format = V4L2_PIX_FMT_YUV420;
 		} else if (strcmp(video_frame_format_string, "rgb565") == 0) {
@@ -1031,7 +1092,6 @@ bool exynos_camera_params_handle_focus_areas(struct exynos_camera *exynos_camera
 }
 
 void exynos_camera_params_block_touch_focus(struct exynos_camera *exynos_camera) {
-	char *focus_mode_string = "auto";
 	int param_focus_mode = exynos_camera_params_get_focus_mode(exynos_camera);
 
 	if (exynos_camera->camera_sensor_mode == SENSOR_CAMERA) {
@@ -1192,7 +1252,7 @@ int exynos_camera_params_set_focus_mode(struct exynos_camera *exynos_camera, int
 					scene_mode_string = exynos_param_string_get(exynos_camera, "scene-mode");
 					if (scene_mode_string != NULL &&
 						strcmp(scene_mode_string, "auto") != 0) {
-							ALOGE("%s: Forcing scene-mode %a after recording", __func__, scene_mode_string);
+							ALOGI("%s: Forcing scene-mode %s after recording", __func__, scene_mode_string);
 							// Force scene-mode if not in auto-mode
 							exynos_camera_params_handle_scene_mode(exynos_camera, 1);
 					} else {
@@ -1208,17 +1268,12 @@ int exynos_camera_params_set_focus_mode(struct exynos_camera *exynos_camera, int
 }
 int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 {
+#ifndef EXYNOS_CAMERA_EMBEDDED_BACKEND
 	char *recording_hint_string;
-	char *recording_preview_size_string;
-
 	char *focus_mode_string;
+#endif
 
 	int force = 0;
-
-	char *k;
-	int rc;
-
-	bool isChanged = false;
 
 
 	if (exynos_camera == NULL)
@@ -1234,17 +1289,36 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 	exynos_camera_handle_preview(exynos_camera);
 
 	// Picture
-	exynos_camera_handle_picture(exynos_camera, false);
+	exynos_camera_handle_picture(exynos_camera, force);
 
 	// JPEG
-	exynos_camera_params_handle_jpeg(exynos_camera, false);
+	exynos_camera_params_handle_jpeg(exynos_camera, force);
+
+	/*
+	 * V4L2_CID_CAMERA_SENSOR_OUTPUT_SIZE is a one-shot input to the Exynos4210
+	 * FIMC0 S_FMT path: fimc_calc_frame_ratio() consumes it and clears it.
+	 * Therefore a stopped/reconfigured Camera3 session must write it again even
+	 * when the requested 1280x720 value did not change.  Retaining only the HAL
+	 * parameter cache starts FIMC0 as a 640x480-only sensor route; FIMC2 then
+	 * STREAMONs successfully but never receives an IRQ.
+	 */
+	if (force)
+		ALOGI("%s: Reapplying complete sensor parameters for new stream session",
+			__func__);
 
 	// Recording video-size
-	exynos_camera_params_handle_video_size(exynos_camera, false);
+	exynos_camera_params_handle_video_size(exynos_camera, force);
 
 	// Recording format
-	exynos_camera_params_handle_video_frame_format(exynos_camera, false);
+	exynos_camera_params_handle_video_frame_format(exynos_camera, force);
 
+	/*
+	 * HAL1 clients sometimes omitted recording-hint and historically inferred
+	 * it from continuous-video AF.  Native Camera3 always supplies the hint from
+	 * the configured encoder stream; overriding it from a stale AF mode leaves
+	 * a photo-only session in SENSOR_MOVIE and poisons the next mode switch.
+	 */
+#ifndef EXYNOS_CAMERA_EMBEDDED_BACKEND
 	// Force recording-hint if focus-mode is in continuous-video
 	focus_mode_string = exynos_param_string_get(exynos_camera, "focus-mode");
 	recording_hint_string = exynos_param_string_get(exynos_camera, "recording-hint");
@@ -1254,6 +1328,7 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 			exynos_param_string_set(exynos_camera, "recording-hint", "true");
 		}
 	}
+#endif
 
 	exynos_camera_params_handle_camera_sensor_mode(exynos_camera);
 
@@ -1262,18 +1337,19 @@ int exynos_camera_params_apply(struct exynos_camera *exynos_camera, bool doInit)
 		ALOGD("%s: Blocked touch focus when in continuous focus-mode.", __func__);
 		exynos_camera->touch_focus_blocked--;
 	} else {
-		bool touched = exynos_camera_params_handle_focus_areas(exynos_camera, doInit);
+		bool touched = exynos_camera_params_handle_focus_areas(exynos_camera,
+			doInit || force);
 		if (touched)
 			exynos_camera_params_block_touch_focus(exynos_camera);
 		if (exynos_camera->touch_focus_blocked == 0)
-			exynos_camera_params_handle_focus_mode(exynos_camera, doInit);
+			exynos_camera_params_handle_focus_mode(exynos_camera, doInit || force);
 	}
 
 	// Scene
 	exynos_camera_params_handle_scene_mode(exynos_camera, false);
 
 	// Zoom
-	exynos_camera_params_handle_zoom(exynos_camera, false);
+	exynos_camera_params_handle_zoom(exynos_camera, force);
 
 	// Flash
 	exynos_camera_params_handle_flashmode(exynos_camera, force);
@@ -1739,7 +1815,6 @@ void *exynos_camera_picture_thread(void *data)
 {
 	struct exynos_camera *exynos_camera;
 	int rc;
-	int i;
 
 	if (data == NULL)
 		return NULL;
@@ -1768,6 +1843,7 @@ void *exynos_camera_picture_thread(void *data)
 
 	exynos_camera->picture_thread_running = 0;
 	exynos_camera->picture_enabled = 0;
+	exynos_camera->picture_thread_started = 0;
 
 	ALOGD("%s: Exiting thread", __func__);
 
@@ -1785,6 +1861,10 @@ int exynos_camera_picture_start(struct exynos_camera *exynos_camera)
 
 	if (exynos_camera == NULL)
 		return -EINVAL;
+
+	/* Preserve the JPEG request value before the detached capture thread. */
+	exynos_camera->picture_rotation =
+		exynos_param_int_get(exynos_camera, "rotation");
 
 	// Stop preview thread
 	exynos_camera_preview_stop(exynos_camera);
@@ -1876,17 +1956,19 @@ int exynos_camera_picture_start(struct exynos_camera *exynos_camera)
 		return -1;
 	}
 
-	pthread_mutex_init(&exynos_camera->picture_mutex, NULL);
-
 	pthread_attr_init(&thread_attr);
 	pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
 
 	exynos_camera->picture_enabled = 1;
+	exynos_camera->picture_thread_started = 1;
 
 	rc = pthread_create(&exynos_camera->picture_thread, &thread_attr,
 		exynos_camera_picture_thread, (void *) exynos_camera);
-	if (rc < 0) {
+	pthread_attr_destroy(&thread_attr);
+	if (rc != 0) {
 		ALOGE("%s: Unable to create thread", __func__);
+		exynos_camera->picture_enabled = 0;
+		exynos_camera->picture_thread_started = 0;
 		return -1;
 	}
 
@@ -1895,13 +1977,12 @@ int exynos_camera_picture_start(struct exynos_camera *exynos_camera)
 
 void exynos_camera_picture_stop(struct exynos_camera *exynos_camera)
 {
-	int rc;
 	int i;
 
 	if (exynos_camera == NULL)
 		return;
 
-	if (!exynos_camera->picture_enabled) {
+	if (!exynos_camera->picture_enabled && !exynos_camera->picture_thread_started) {
 		ALOGE("Picture was already stopped!");
 		return;
 	}
@@ -1914,14 +1995,14 @@ void exynos_camera_picture_stop(struct exynos_camera *exynos_camera)
 	pthread_mutex_unlock(&exynos_camera->picture_mutex);
 
 	// Wait for the thread to end
-	for (i = 0; i < 10; i++) {
-		if (!exynos_camera->picture_thread_running)
+	for (i = 0; i < 100; i++) {
+		if (!exynos_camera->picture_thread_running &&
+			!exynos_camera->picture_thread_started)
 			break;
 
-		usleep(500);
+		usleep(10000);
 	}
 
-	pthread_mutex_destroy(&exynos_camera->picture_mutex);
 }
 
 // Auto-focus
@@ -2010,6 +2091,7 @@ thread_exit:
 
 	exynos_camera->auto_focus_thread_running = 0;
 	exynos_camera->auto_focus_enabled = 0;
+	exynos_camera->auto_focus_thread_started = 0;
 
 	ALOGD("%s: Exiting thread", __func__);
 
@@ -2042,17 +2124,19 @@ int exynos_camera_auto_focus_start(struct exynos_camera *exynos_camera)
 		return 0;
 	}
 
-	pthread_mutex_init(&exynos_camera->auto_focus_mutex, NULL);
-
 	pthread_attr_init(&thread_attr);
 	pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
 
 	exynos_camera->auto_focus_enabled = 1;
+	exynos_camera->auto_focus_thread_started = 1;
 
 	rc = pthread_create(&exynos_camera->auto_focus_thread, &thread_attr,
 		exynos_camera_auto_focus_thread, (void *) exynos_camera);
-	if (rc < 0) {
+	pthread_attr_destroy(&thread_attr);
+	if (rc != 0) {
 		ALOGE("%s: Unable to create thread", __func__);
+		exynos_camera->auto_focus_enabled = 0;
+		exynos_camera->auto_focus_thread_started = 0;
 		return -1;
 	}
 	return 0;
@@ -2060,13 +2144,13 @@ int exynos_camera_auto_focus_start(struct exynos_camera *exynos_camera)
 
 void exynos_camera_auto_focus_stop(struct exynos_camera *exynos_camera)
 {
-	int rc;
 	int i;
 
 	if (exynos_camera == NULL)
 		return;
 
-	if (!exynos_camera->auto_focus_enabled) {
+	if (!exynos_camera->auto_focus_enabled &&
+		!exynos_camera->auto_focus_thread_started) {
 		ALOGE("Auto-focus was already stopped!");
 		return;
 	}
@@ -2079,40 +2163,50 @@ void exynos_camera_auto_focus_stop(struct exynos_camera *exynos_camera)
 	pthread_mutex_unlock(&exynos_camera->auto_focus_mutex);
 
 	// Wait for the thread to end
-	for (i = 0; i < 10; i++) {
-		if (!exynos_camera->auto_focus_thread_running)
+	for (i = 0; i < 100; i++) {
+		if (!exynos_camera->auto_focus_thread_running &&
+			!exynos_camera->auto_focus_thread_started)
 			break;
 
-		usleep(500);
+		usleep(10000);
 	}
-
-	pthread_mutex_destroy(&exynos_camera->auto_focus_mutex);
 }
 
 // Preview
 
 int exynos_camera_preview(struct exynos_camera *exynos_camera)
 {
+#ifndef EXYNOS_CAMERA_EMBEDDED_BACKEND
 	buffer_handle_t *buffer;
 	int stride;
+#endif
 
 	int width, height;
-	float format_bpp;
 
-	char *preview_format_string;
 	int frame_size, offset;
 	void *preview_data;
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+	uint32_t preview_y_addr = 0;
+	uint32_t preview_cbcr_addr = 0;
+	int recording_index = -1;
+	int recording_frame_size = 0;
+	void *recording_data = NULL;
+	uint32_t recording_y_addr = 0;
+	uint32_t recording_cbcr_addr = 0;
+#endif
+#ifndef EXYNOS_CAMERA_EMBEDDED_BACKEND
 	void *window_data;
 
 	unsigned int recording_y_addr;
 	unsigned int recording_cbcr_addr;
+#endif
 	nsecs_t timestamp;
+#ifndef EXYNOS_CAMERA_EMBEDDED_BACKEND
 	struct exynos_camera_addrs *addrs;
-	struct timespec ts;
-
+#endif
 	int index;
 	int rc;
-	int i;
+	int preview_mutex_locked = 0;
 
 	if (exynos_camera == NULL) {
 		ALOGE("%s: exynos_camera == NULL", __func__);
@@ -2122,24 +2216,42 @@ int exynos_camera_preview(struct exynos_camera *exynos_camera)
 		ALOGE("%s: exynos_camera->preview_memory == NULL", __func__);
 		goto error;
 	}
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+	if (exynos_camera->frame_callback == NULL) {
+		ALOGE("%s: native Camera3 frame callback is NULL", __func__);
+		goto error;
+	}
+#else
 	if (exynos_camera->preview_window == NULL) {
 		ALOGE("%s: exynos_camera->preview_window == NULL", __func__);
 		goto error;
 	}
-
-	timestamp = systemTime(1);
+#endif
 
 	// V4L2
 	pthread_mutex_lock(&exynos_camera->preview_mutex);
+	preview_mutex_locked = 1;
 
 	rc = exynos_v4l2_poll(exynos_camera, 0);
 	if (rc < 0) {
 		ALOGE("%s: poll failed!", __func__);
 		goto error;
 	} else if (rc == 0) {
-		ALOGE("%s: poll timeout!", __func__);
+		if (!exynos_camera->preview_enabled) {
+			pthread_mutex_unlock(&exynos_camera->preview_mutex);
+			return 0;
+		}
+		exynos_camera->preview_poll_timeouts++;
+		if (exynos_camera->preview_poll_timeouts < 3) {
+			ALOGW("%s: transient preview poll timeout %d/3", __func__,
+				exynos_camera->preview_poll_timeouts);
+			pthread_mutex_unlock(&exynos_camera->preview_mutex);
+			return 0;
+		}
+		ALOGE("%s: preview poll timed out 3 times", __func__);
 		goto error;
 	}
+	exynos_camera->preview_poll_timeouts = 0;
 
 	index = exynos_v4l2_dqbuf_cap(exynos_camera, 0);
 	if (index < 0 || index >= exynos_camera->preview_buffers_count) {
@@ -2147,17 +2259,141 @@ int exynos_camera_preview(struct exynos_camera *exynos_camera)
 		goto error;
 	}
 
+	width = exynos_camera->preview_width;
+	height = exynos_camera->preview_height;
+	frame_size = (int)((float)width * (float)height *
+		exynos_camera->preview_format_bpp);
+	offset = index * exynos_camera->preview_frame_size;
+	preview_data = (void *)((int)exynos_camera->preview_memory->data + offset);
+	timestamp = systemTime(SYSTEM_TIME_MONOTONIC);
+
+	/* Native Camera3 path. */
+	if (exynos_camera->frame_callback != NULL) {
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+		preview_y_addr = exynos_v4l2_s_ctrl(exynos_camera, 0,
+			V4L2_CID_PADDR_Y, index);
+		preview_cbcr_addr = exynos_v4l2_s_ctrl(exynos_camera, 0,
+			V4L2_CID_PADDR_CBCR, index);
+		if (preview_y_addr == 0xffffffff || preview_cbcr_addr == 0xffffffff) {
+			ALOGE("%s: preview physical-address query failed!", __func__);
+			goto error;
+		}
+
+		/*
+		 * FIMC2 must not be armed until FIMC0 has produced a real frame.  The
+		 * original Samsung HAL1 did the same implicitly because startRecording
+		 * was called after preview was already running.  Starting both nodes
+		 * back-to-back during configureStreams leaves FIMC2 without IRQs after
+		 * a still-preview -> movie transition on M5MO.
+		 */
+		if (exynos_camera->native_recording_stream &&
+			!exynos_camera->recording_enabled) {
+			rc = exynos_camera_recording_start(exynos_camera);
+			if (rc < 0) {
+				ALOGE("%s: deferred native recording stream start failed!", __func__);
+				goto error;
+			}
+			ALOGI("%s: FIMC2 started after first FIMC0 frame", __func__);
+		}
+
+		/*
+		 * The Exynos4 pipeline exposes an independent recording capture node.
+		 * Dequeue it beside the preview node so Camera3 receives the native
+		 * 640x480 preview and native HD encoder frames from hardware, rather
+		 * than scaling the HD frame on the Cortex-A9.
+		 */
+		if (exynos_camera->recording_enabled &&
+			exynos_camera->recording_memory != NULL) {
+			rc = exynos_v4l2_poll(exynos_camera, 2);
+			if (rc <= 0) {
+				if (rc == 0 && exynos_camera->preview_enabled) {
+					exynos_camera->recording_poll_timeouts++;
+					if (exynos_v4l2_qbuf_cap(exynos_camera, 0, index) < 0) {
+						ALOGE("%s: preview qbuf failed during recording recovery!",
+							__func__);
+						goto error;
+					}
+					if (exynos_camera->recording_poll_timeouts < 3) {
+						ALOGW("%s: transient recording poll timeout %d/3; retrying",
+							__func__, exynos_camera->recording_poll_timeouts);
+						pthread_mutex_unlock(&exynos_camera->preview_mutex);
+						return 0;
+					}
+					ALOGE("%s: recording poll timed out 3 times", __func__);
+				} else {
+					ALOGE("%s: recording poll failed!", __func__);
+				}
+				goto error;
+			}
+			exynos_camera->recording_poll_timeouts = 0;
+			recording_index = exynos_v4l2_dqbuf_cap(exynos_camera, 2);
+			if (recording_index < 0 ||
+				recording_index >= exynos_camera->recording_buffers_count) {
+				ALOGE("%s: recording dqbuf failed!", __func__);
+				goto error;
+			}
+			recording_frame_size = exynos_camera->recording_frame_size;
+			recording_y_addr = exynos_v4l2_s_ctrl(exynos_camera, 2,
+				V4L2_CID_PADDR_Y, recording_index);
+			recording_cbcr_addr = exynos_v4l2_s_ctrl(exynos_camera, 2,
+				V4L2_CID_PADDR_CBCR, recording_index);
+			if (recording_y_addr == 0xffffffff || recording_cbcr_addr == 0xffffffff) {
+				ALOGE("%s: recording physical-address query failed!", __func__);
+				goto error;
+			}
+			timestamp = systemTime(SYSTEM_TIME_MONOTONIC);
+		}
+
+		/*
+		 * Keep the dequeued FIMC0 buffer owned until the native Camera3 callback
+		 * has copied it to the framework buffer. The wrapper dispatches the final
+		 * process_capture_result call on its FIFO result thread, so this capture
+		 * callback no longer waits for the framework/encoder round trip. Requeueing
+		 * before the copy completes would still require a second 640x480 CPU copy
+		 * through preview_staging on every frame.
+		 * That extra copy competes with FIMC1 and MFC for Exynos4 memory bandwidth
+		 * precisely while recording is active.
+		 */
+#endif
+		rc = exynos_camera->frame_callback(preview_data, frame_size,
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+			recording_data, recording_frame_size,
+			preview_y_addr, preview_cbcr_addr,
+			recording_y_addr, recording_cbcr_addr,
+#else
+			NULL, 0,
+			0, 0,
+			0, 0,
+#endif
+			timestamp, exynos_camera->frame_callback_user);
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+		if (recording_index >= 0 &&
+			exynos_v4l2_qbuf_cap(exynos_camera, 2, recording_index) < 0) {
+			ALOGE("%s: recording qbuf failed!", __func__);
+			goto error;
+		}
+#endif
+		if (index >= 0 && exynos_v4l2_qbuf_cap(exynos_camera, 0, index) < 0) {
+			ALOGE("%s: qbuf failed!", __func__);
+			goto error;
+		}
+		if (rc < 0) {
+			ALOGE("%s: native frame callback failed: %d", __func__, rc);
+			goto error;
+		}
+		pthread_mutex_unlock(&exynos_camera->preview_mutex);
+		preview_mutex_locked = 0;
+		return 0;
+	}
+
+#ifndef EXYNOS_CAMERA_EMBEDDED_BACKEND
 	rc = exynos_v4l2_qbuf_cap(exynos_camera, 0, index);
 	if (rc < 0) {
 		ALOGE("%s: qbuf failed!", __func__);
 		goto error;
 	}
 
-	// Preview window
-
-	width = exynos_camera->preview_width;
-	height = exynos_camera->preview_height;
-	format_bpp = exynos_camera->preview_format_bpp;
+	// Camera1 preview window
 
 	exynos_camera->preview_window->dequeue_buffer(exynos_camera->preview_window,
 		&buffer, &stride);
@@ -2173,10 +2409,6 @@ int exynos_camera_preview(struct exynos_camera *exynos_camera)
 		goto error;
 	}
 
-	frame_size = exynos_camera->preview_frame_size;
-	offset = index * frame_size;
-
-	preview_data = (void *) ((int) exynos_camera->preview_memory->data + offset);
 	memcpy(window_data, preview_data, frame_size);
 
 	exynos_camera->gralloc->unlock(exynos_camera->gralloc, *buffer);
@@ -2184,6 +2416,7 @@ int exynos_camera_preview(struct exynos_camera *exynos_camera)
 		buffer);
 
 	pthread_mutex_unlock(&exynos_camera->preview_mutex);
+	preview_mutex_locked = 0;
 
 	if (EXYNOS_CAMERA_MSG_ENABLED(CAMERA_MSG_PREVIEW_FRAME) && EXYNOS_CAMERA_CALLBACK_DEFINED(data)) {
 		exynos_camera->callbacks.data(CAMERA_MSG_PREVIEW_FRAME,
@@ -2245,15 +2478,19 @@ int exynos_camera_preview(struct exynos_camera *exynos_camera)
 			}
 		}
 	}
+#endif
 
 	return 0;
 
+#ifndef EXYNOS_CAMERA_EMBEDDED_BACKEND
 error_recording:
 	pthread_mutex_unlock(&exynos_camera->recording_mutex);
 	ALOGE("%s: Exiting with error", __func__);
 	return -1;
+#endif
 error:
-	pthread_mutex_unlock(&exynos_camera->preview_mutex);
+	if (preview_mutex_locked)
+		pthread_mutex_unlock(&exynos_camera->preview_mutex);
 	ALOGE("%s: Exiting with error", __func__);
 	return -1;
 
@@ -2268,15 +2505,30 @@ void *exynos_camera_preview_thread(void *data)
 		return NULL;
 
 	exynos_camera = (struct exynos_camera *) data;
+	if (setpriority(PRIO_PROCESS, 0,
+		EXYNOS_CAMERA_PRIORITY_URGENT_DISPLAY) < 0)
+		ALOGW("%s: unable to set capture priority: %s", __func__,
+			strerror(errno));
+	else
+		ALOGI("%s: using Android urgent-display priority", __func__);
 
 	ALOGD("%s: Starting thread", __func__);
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+	if (exynos_camera->frame_callback == NULL) {
+		exynos_camera->preview_waiting_for_window = 1;
+		ALOGD("%s: Waiting for frame consumer...", __func__);
+		pthread_mutex_lock(&exynos_camera->preview_lock_mutex);
+		exynos_camera->preview_waiting_for_window = 0;
+	}
+#else
 	if (exynos_camera->preview_window == NULL) {
 		exynos_camera->preview_waiting_for_window = 1;
-		ALOGD("%s: Waiting for preview-window...", __func__);
+		ALOGD("%s: Waiting for frame consumer...", __func__);
 		// Lock preview lock mutex
 		pthread_mutex_lock(&exynos_camera->preview_lock_mutex);
 		exynos_camera->preview_waiting_for_window = 0;
 	}
+#endif
 
 	while (exynos_camera->preview_enabled == 1) {
 		//Check if recording-start is triggered.
@@ -2298,17 +2550,29 @@ void *exynos_camera_preview_thread(void *data)
 		//Preview (and recording routine)
 		rc = exynos_camera_preview(exynos_camera);
 		if (rc < 0) {
+			int unexpected_error = exynos_camera->preview_enabled == 1;
 			ALOGE("%s: preview failed!", __func__);
 			exynos_camera->preview_enabled = 0;
+			if (unexpected_error &&
+				EXYNOS_CAMERA_MSG_ENABLED(CAMERA_MSG_ERROR) &&
+				EXYNOS_CAMERA_CALLBACK_DEFINED(notify))
+				exynos_camera->callbacks.notify(CAMERA_MSG_ERROR,
+					CAMERA_ERROR_UNKNOWN, 0, exynos_camera->callbacks.user);
 		}
 
 		exynos_camera->preview_thread_running = 1;
 	}
 
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+	if (exynos_camera->frame_callback == NULL) {
+		pthread_mutex_unlock(&exynos_camera->preview_lock_mutex);
+	}
+#else
 	if (exynos_camera->preview_window == NULL) {
 		// Unlock preview lock mutex
 		pthread_mutex_unlock(&exynos_camera->preview_lock_mutex);
 	}
+#endif
 	exynos_camera->preview_thread_running = 0;
 	exynos_camera->preview_thread_started = 0;
 	ALOGD("%s: Exiting thread", __func__);
@@ -2327,6 +2591,7 @@ int exynos_camera_preview_start(struct exynos_camera *exynos_camera)
 
 	int rc;
 	int i;
+	int preview_stream_on = 0;
 
 	ALOGD("%s: Starting ", __func__);
 	if (exynos_camera == NULL)
@@ -2337,8 +2602,13 @@ int exynos_camera_preview_start(struct exynos_camera *exynos_camera)
 		return 0;
 	}
 
-	exynos_camera->preview_enabled = 1;
-	exynos_camera->preview_thread_started = 1;
+	/* Picture and preview share node 0; discard the previous MMAP queue first. */
+	exynos_v4l2_reqbufs_cap(exynos_camera, 0, 0);
+	exynos_camera->preview_buffers_count = 0;
+	exynos_camera->preview_frame_size = 0;
+	exynos_camera->preview_poll_timeouts = 0;
+	exynos_camera->recording_poll_timeouts = 0;
+
 	// V4L2
 
 	format = exynos_camera->preview_format;
@@ -2356,7 +2626,7 @@ int exynos_camera_preview_start(struct exynos_camera *exynos_camera)
 	height = exynos_camera->preview_height;
 	format_bpp = exynos_camera->preview_format_bpp;
 
-	ALOGD("%s: Starting preview %dx%d %d", __func__, width, height, format_bpp);
+	ALOGD("%s: Starting preview %dx%d %.1f bpp", __func__, width, height, format_bpp);
 
 	rc = exynos_v4l2_s_fmt_pix_cap(exynos_camera, 0, width, height, format, V4L2_PIX_FMT_MODE_PREVIEW);
 	if (rc < 0) {
@@ -2468,24 +2738,27 @@ int exynos_camera_preview_start(struct exynos_camera *exynos_camera)
 		ALOGE("%s: streamon failed!", __func__);
 		goto error;
 	}
-
+	preview_stream_on = 1;
 	// Force scene-mode
 	exynos_camera_params_handle_scene_mode(exynos_camera, 1);
 
 	// Thread
 
-	pthread_mutex_init(&exynos_camera->preview_mutex, NULL);
-	pthread_mutex_init(&exynos_camera->preview_lock_mutex, NULL);
-
+	/* The embedded Camera3 backend always has a native frame callback. */
+#ifndef EXYNOS_CAMERA_EMBEDDED_BACKEND
 	// Lock preview lock
 	pthread_mutex_lock(&exynos_camera->preview_lock_mutex);
+#endif
+	exynos_camera->preview_enabled = 1;
+	exynos_camera->preview_thread_started = 1;
 
 	pthread_attr_init(&thread_attr);
 	pthread_attr_setdetachstate(&thread_attr, PTHREAD_CREATE_DETACHED);
 
 	rc = pthread_create(&exynos_camera->preview_thread, &thread_attr,
 		exynos_camera_preview_thread, (void *) exynos_camera);
-	if (rc < 0) {
+	pthread_attr_destroy(&thread_attr);
+	if (rc != 0) {
 		ALOGE("%s: Unable to create thread", __func__);
 		goto error;
 	}
@@ -2493,6 +2766,25 @@ int exynos_camera_preview_start(struct exynos_camera *exynos_camera)
 	ALOGD("%s: Exiting ", __func__);
 	return 0;
 error:
+	exynos_camera->preview_enabled = 0;
+	exynos_camera->preview_thread_started = 0;
+#ifndef EXYNOS_CAMERA_EMBEDDED_BACKEND
+	pthread_mutex_unlock(&exynos_camera->preview_lock_mutex);
+#endif
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+	if (exynos_camera->recording_enabled)
+		exynos_camera_recording_stop(exynos_camera);
+#endif
+	if (preview_stream_on)
+		exynos_v4l2_streamoff_cap(exynos_camera, 0);
+	if (exynos_camera->preview_memory != NULL &&
+		exynos_camera->preview_memory->release != NULL) {
+		exynos_camera->preview_memory->release(exynos_camera->preview_memory);
+		exynos_camera->preview_memory = NULL;
+	}
+	exynos_v4l2_reqbufs_cap(exynos_camera, 0, 0);
+	exynos_camera->preview_buffers_count = 0;
+	exynos_camera->preview_frame_size = 0;
 	ALOGD("%s: Exiting with error", __func__);
 	return -1;
 }
@@ -2507,15 +2799,20 @@ void exynos_camera_preview_stop(struct exynos_camera *exynos_camera)
 	if (exynos_camera == NULL)
 		goto exit;
 
-	if (!exynos_camera->preview_enabled) {
+	if (!exynos_camera->preview_enabled && !exynos_camera->preview_thread_started &&
+		exynos_camera->preview_memory == NULL &&
+		exynos_camera->preview_buffers_count == 0 &&
+		!exynos_camera->recording_enabled) {
 		ALOGE("Preview was already stopped!");
 		goto exit;
 	}
 
 	exynos_camera->preview_enabled = 0;
 
+#ifndef EXYNOS_CAMERA_EMBEDDED_BACKEND
 	// Unlock preview lock
 	pthread_mutex_unlock(&exynos_camera->preview_lock_mutex);
+#endif
 
 	pthread_mutex_lock(&exynos_camera->preview_mutex);
 
@@ -2529,6 +2826,11 @@ void exynos_camera_preview_stop(struct exynos_camera *exynos_camera)
 
 	}
 
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+	if (exynos_camera->recording_enabled)
+		exynos_camera_recording_stop(exynos_camera);
+#endif
+
 	rc = exynos_v4l2_streamoff_cap(exynos_camera, 0);
 	if (rc < 0) {
 		ALOGE("%s: streamoff failed!", __func__);
@@ -2540,13 +2842,15 @@ void exynos_camera_preview_stop(struct exynos_camera *exynos_camera)
 		exynos_camera->preview_memory->release(exynos_camera->preview_memory);
 		exynos_camera->preview_memory = NULL;
 	}
+	exynos_v4l2_reqbufs_cap(exynos_camera, 0, 0);
+	exynos_camera->preview_buffers_count = 0;
+	exynos_camera->preview_frame_size = 0;
+	exynos_camera->preview_poll_timeouts = 0;
+	exynos_camera->recording_poll_timeouts = 0;
 
 	exynos_camera->preview_window = NULL;
 
 	pthread_mutex_unlock(&exynos_camera->preview_mutex);
-
-	pthread_mutex_destroy(&exynos_camera->preview_lock_mutex);
-	pthread_mutex_destroy(&exynos_camera->preview_mutex);
 
 exit:
 	ALOGD("%s: Exiting ", __func__);
@@ -2568,6 +2872,10 @@ void exynos_camera_recording_frame_release(struct exynos_camera *exynos_camera, 
 		return;
 
 	pthread_mutex_lock(&exynos_camera->recording_mutex);
+	if (!exynos_camera->recording_enabled) {
+		pthread_mutex_unlock(&exynos_camera->recording_mutex);
+		return;
+	}
 
 	rc = exynos_v4l2_qbuf_cap(exynos_camera, 2, addrs->index);
 	if (rc < 0) {
@@ -2582,10 +2890,13 @@ error:
 int exynos_camera_recording_start(struct exynos_camera *exynos_camera)
 {
 	int width, height, format;
-	int fd;
 
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+	int fd;
+#endif
 	int rc;
 	int i;
+	int recording_stream_on = 0;
 
 	if (exynos_camera == NULL)
 		return -EINVAL;
@@ -2595,11 +2906,16 @@ int exynos_camera_recording_start(struct exynos_camera *exynos_camera)
 		return 0;
 	}
 
-	rc = exynos_camera_params_handle_video_size(exynos_camera, true);
-	if (rc < 0) {
-		ALOGE("%s: Ensure video-size failed!", __func__);
-		goto error;
-	}
+	exynos_camera->recording_buffers_count = 0;
+	exynos_camera->recording_frame_size = 0;
+	exynos_camera->recording_poll_timeouts = 0;
+
+	/*
+	 * SENSOR_OUTPUT_SIZE must already have been consumed by FIMC0 S_FMT before
+	 * preview starts.  Rewriting this one-shot control here, after FIMC0 is
+	 * streaming, cannot alter the active route and instead leaks a stale value
+	 * into the following Camera3 session.
+	 */
 
 	// V4L2
 	format = exynos_camera->recording_format;
@@ -2613,9 +2929,27 @@ int exynos_camera_recording_start(struct exynos_camera *exynos_camera)
 	width = exynos_camera->recording_width;
 	height = exynos_camera->recording_height;
 
-	rc = exynos_v4l2_s_fmt_pix_cap(exynos_camera, 2, width, height, format, V4L2_PIX_FMT_MODE_CAPTURE);
+	/*
+	 * Node 2 is the continuous movie tap.  The Exynos4210 driver issues
+	 * STREAM_MODE_MOVIE_ON for every non-HDR FIMC2 stream; retain PREVIEW here
+	 * so its format describes the same monitor pipeline already armed by
+	 * FIMC0, rather than labelling this DMA output as a still capture.
+	 */
+	rc = exynos_v4l2_s_fmt_pix_cap(exynos_camera, 2, width, height, format,
+		V4L2_PIX_FMT_MODE_PREVIEW);
 	if (rc < 0) {
 		ALOGE("%s: s fmt failed!", __func__);
+		goto error;
+	}
+
+	/*
+	 * Node 2 feeds FIMC1 by physical address and is never read by the CPU.
+	 * Keep its capture buffers non-cacheable so FIMC2 -> FIMC1 -> MFC remains
+	 * a coherent DMA-only pipeline without per-frame cache invalidation.
+	 */
+	rc = exynos_v4l2_s_ctrl(exynos_camera, 2, V4L2_CID_CACHEABLE, 0);
+	if (rc < 0) {
+		ALOGE("%s: recording cacheable control failed!", __func__);
 		goto error;
 	}
 
@@ -2640,14 +2974,27 @@ int exynos_camera_recording_start(struct exynos_camera *exynos_camera)
 			goto error;
 		}
 	}
+	exynos_camera->recording_frame_size = rc;
 
 	if (exynos_camera->callbacks.request_memory != NULL) {
 		if (exynos_camera->recording_memory != NULL && exynos_camera->recording_memory->release != NULL)
 			exynos_camera->recording_memory->release(exynos_camera->recording_memory);
 
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+		fd = exynos_v4l2_find_fd(exynos_camera, 2);
+		if (fd < 0) {
+			ALOGE("%s: Unable to find recording v4l2 fd", __func__);
+			goto error;
+		}
+		exynos_camera->recording_memory =
+			exynos_camera->callbacks.request_memory(fd,
+				exynos_camera->recording_frame_size,
+				exynos_camera->recording_buffers_count, 0);
+#else
 		exynos_camera->recording_memory =
 			exynos_camera->callbacks.request_memory(-1, sizeof(struct exynos_camera_addrs),
 				exynos_camera->recording_buffers_count, 0);
+#endif
 		if (exynos_camera->recording_memory == NULL) {
 			ALOGE("%s: memory request failed!", __func__);
 			goto error;
@@ -2696,7 +3043,7 @@ int exynos_camera_recording_start(struct exynos_camera *exynos_camera)
 		scene_mode_string = exynos_param_string_get(exynos_camera, "scene-mode");
 		if (scene_mode_string != NULL &&
 			strcmp(scene_mode_string, "auto") != 0) {
-				ALOGE("%s: Forcing scene-mode %a after recording", __func__, scene_mode_string);
+			ALOGI("%s: Forcing scene-mode %s after recording", __func__, scene_mode_string);
 				// Force scene-mode if not in auto-mode
 				exynos_camera_params_handle_scene_mode(exynos_camera, 1);
 		} else {
@@ -2704,12 +3051,27 @@ int exynos_camera_recording_start(struct exynos_camera *exynos_camera)
 
 		}
 	}
-	pthread_mutex_init(&exynos_camera->recording_mutex, NULL);
+	recording_stream_on = 1;
 
 	exynos_camera->recording_enabled = 1;
 
 	return 0;
 error:
+	exynos_camera->recording_enabled = 0;
+	if (recording_stream_on)
+		exynos_v4l2_streamoff_cap(exynos_camera, 2);
+	if (exynos_camera->recording_memory != NULL &&
+		exynos_camera->recording_memory->release != NULL) {
+		exynos_camera->recording_memory->release(exynos_camera->recording_memory);
+		exynos_camera->recording_memory = NULL;
+	}
+	exynos_v4l2_reqbufs_cap(exynos_camera, 2, 0);
+	exynos_camera->recording_buffers_count = 0;
+	exynos_camera->recording_frame_size = 0;
+	free(exynos_camera->recording_staging);
+	exynos_camera->recording_staging = NULL;
+	exynos_camera->recording_staging_size = 0;
+	exynos_camera->recording_poll_timeouts = 0;
 	return -1;
 }
 
@@ -2719,9 +3081,14 @@ void exynos_camera_recording_stop(struct exynos_camera *exynos_camera)
 
 	if (exynos_camera == NULL)
 		return;
+	pthread_mutex_lock(&exynos_camera->recording_mutex);
 
-	if (!exynos_camera->recording_enabled) {
+	if (!exynos_camera->recording_enabled &&
+		exynos_camera->recording_memory == NULL &&
+		exynos_camera->recording_staging == NULL &&
+		exynos_camera->recording_buffers_count == 0) {
 		ALOGE("Recording was already stopped!");
+		pthread_mutex_unlock(&exynos_camera->recording_mutex);
 		return;
 	}
 
@@ -2739,31 +3106,251 @@ void exynos_camera_recording_stop(struct exynos_camera *exynos_camera)
 		exynos_camera->recording_memory->release(exynos_camera->recording_memory);
 		exynos_camera->recording_memory = NULL;
 	}
-
-	pthread_mutex_destroy(&exynos_camera->recording_mutex);
+	exynos_v4l2_reqbufs_cap(exynos_camera, 2, 0);
+	exynos_camera->recording_buffers_count = 0;
+	exynos_camera->recording_frame_size = 0;
+	free(exynos_camera->recording_staging);
+	exynos_camera->recording_staging = NULL;
+	exynos_camera->recording_staging_size = 0;
+	exynos_camera->recording_poll_timeouts = 0;
+	pthread_mutex_unlock(&exynos_camera->recording_mutex);
 }
 
 /*
- * Exynos Camera OPS
+ * Native Camera3 backend API
+ *
+ * The Camera3 module owns struct exynos_camera directly.  No hw_module_t,
+ * camera_device_t or camera_device_ops table exists in the embedded build.
  */
 
-int exynos_camera_set_preview_window(struct camera_device *dev,
-	struct preview_stream_ops *w)
+int exynos_camera_backend_get_number_of_cameras(void)
 {
-	struct exynos_camera *exynos_camera;
+	if (exynos_camera_config == NULL || exynos_camera_config->presets == NULL)
+		return -ENODEV;
 
-	int width, height, format, hal_format;
+	return exynos_camera_config->presets_count;
+}
 
-	buffer_handle_t *buffer;
-	int stride;
-	void *addr = NULL;
-
-	int rc;
-
-	if (dev == NULL || dev->priv == NULL)
+int exynos_camera_backend_get_camera_info(int id, int *facing, int *orientation)
+{
+	if (exynos_camera_config == NULL || exynos_camera_config->presets == NULL ||
+		facing == NULL || orientation == NULL || id < 0 ||
+		id >= exynos_camera_config->presets_count)
 		return -EINVAL;
 
-	exynos_camera = (struct exynos_camera *) dev->priv;
+	*facing = exynos_camera_config->presets[id].facing;
+	*orientation = exynos_camera_config->presets[id].orientation;
+	return 0;
+}
+
+int exynos_camera_backend_open(int id, struct exynos_camera **camera)
+{
+	struct exynos_camera *exynos_camera;
+	int rc;
+
+	if (camera == NULL || exynos_camera_config == NULL ||
+		exynos_camera_config->presets == NULL || id < 0 ||
+		id >= exynos_camera_config->presets_count)
+		return -EINVAL;
+
+	*camera = NULL;
+	exynos_camera = calloc(1, sizeof(*exynos_camera));
+	if (exynos_camera == NULL)
+		return -ENOMEM;
+
+	exynos_camera->config = exynos_camera_config;
+	if (exynos_camera->config->presets_count > EXYNOS_CAMERA_MAX_PRESETS_COUNT ||
+		exynos_camera->config->v4l2_nodes_count > EXYNOS_CAMERA_MAX_V4L2_NODES_COUNT) {
+		free(exynos_camera);
+		return -EINVAL;
+	}
+
+	rc = exynos_camera_init(exynos_camera, id);
+	if (rc < 0) {
+		exynos_camera_deinit(exynos_camera);
+		free(exynos_camera);
+		return rc;
+	}
+
+	*camera = exynos_camera;
+	return 0;
+}
+
+void exynos_camera_backend_close(struct exynos_camera *exynos_camera)
+{
+	if (exynos_camera == NULL)
+		return;
+
+	exynos_camera->callbacks.notify = NULL;
+	exynos_camera->callbacks.data = NULL;
+	exynos_camera->callbacks.data_timestamp = NULL;
+	exynos_camera->callbacks.request_memory = NULL;
+	exynos_camera->callbacks.user = NULL;
+	exynos_camera->frame_callback = NULL;
+	exynos_camera->frame_callback_user = NULL;
+	exynos_camera_deinit(exynos_camera);
+	free(exynos_camera);
+}
+
+int exynos_camera_backend_reset_capture_nodes(struct exynos_camera *exynos_camera)
+{
+	int node;
+	int rc;
+
+	if (exynos_camera == NULL || exynos_camera->preview_enabled ||
+		exynos_camera->preview_thread_started || exynos_camera->recording_enabled)
+		return -EBUSY;
+
+	/*
+	 * M5MO and FIMC0/FIMC2 share their sensor-routing state.  Merely reopening
+	 * node 2 leaves the old still-camera route active after a photo session,
+	 * so its first movie STREAMON never receives an IRQ.  Re-select both
+	 * capture inputs while streams are stopped, matching a native Camera3
+	 * session-mode transition without destroying the HAL device or callbacks.
+	 */
+	exynos_v4l2_close(exynos_camera, 2);
+	exynos_v4l2_close(exynos_camera, 0);
+
+	for (node = 0; node <= 2; node += 2) {
+		rc = exynos_v4l2_open(exynos_camera, node);
+		if (rc < 0 || exynos_v4l2_querycap_cap(exynos_camera, node) < 0 ||
+			exynos_v4l2_enum_input(exynos_camera, node,
+				exynos_camera->camera_id) < 0 ||
+			exynos_v4l2_s_input(exynos_camera, node,
+				exynos_camera->camera_id) < 0) {
+			ALOGE("%s: failed to reinitialize capture node %d", __func__, node);
+			return -ENODEV;
+		}
+	}
+
+	/* Force the new file descriptors to receive their session controls. */
+	exynos_camera->preview_params_set = 0;
+	exynos_camera->camera_sensor_mode = -1;
+	exynos_camera->preview_poll_timeouts = 0;
+	exynos_camera->recording_poll_timeouts = 0;
+	ALOGI("%s: reset native photo-to-video capture route", __func__);
+	return 0;
+}
+
+void exynos_camera_backend_set_frame_callback(struct exynos_camera *exynos_camera,
+	exynos_camera_backend_frame_callback callback, void *user)
+{
+	if (exynos_camera == NULL)
+		return;
+
+	exynos_camera->frame_callback = callback;
+	exynos_camera->frame_callback_user = user;
+}
+
+void exynos_camera_backend_set_recording_stream(struct exynos_camera *exynos_camera,
+	int enabled)
+{
+	if (exynos_camera != NULL)
+		exynos_camera->native_recording_stream = enabled != 0;
+}
+
+void exynos_camera_backend_set_callbacks(struct exynos_camera *exynos_camera,
+	camera_notify_callback notify_cb, camera_data_callback data_cb,
+	camera_data_timestamp_callback timestamp_cb,
+	camera_request_memory request_memory, void *user)
+{
+	if (exynos_camera == NULL)
+		return;
+
+	exynos_camera->callbacks.notify = notify_cb;
+	exynos_camera->callbacks.data = data_cb;
+	exynos_camera->callbacks.data_timestamp = timestamp_cb;
+	exynos_camera->callbacks.request_memory = request_memory;
+	exynos_camera->callbacks.user = user;
+}
+
+void exynos_camera_backend_enable_messages(struct exynos_camera *exynos_camera,
+	int32_t message_types)
+{
+	if (exynos_camera != NULL)
+		exynos_camera->messages_enabled |= message_types;
+}
+
+int exynos_camera_backend_start_preview(struct exynos_camera *exynos_camera)
+{
+	return exynos_camera == NULL ? -EINVAL :
+		exynos_camera_preview_start(exynos_camera);
+}
+
+void exynos_camera_backend_stop_preview(struct exynos_camera *exynos_camera)
+{
+	if (exynos_camera != NULL)
+		exynos_camera_preview_stop(exynos_camera);
+}
+
+int exynos_camera_backend_auto_focus(struct exynos_camera *exynos_camera)
+{
+	return exynos_camera == NULL ? -EINVAL :
+		exynos_camera_auto_focus_start(exynos_camera);
+}
+
+void exynos_camera_backend_cancel_auto_focus(struct exynos_camera *exynos_camera)
+{
+	if (exynos_camera != NULL)
+		exynos_camera_auto_focus_stop(exynos_camera);
+}
+
+int exynos_camera_backend_take_picture(struct exynos_camera *exynos_camera)
+{
+	return exynos_camera == NULL ? -EINVAL :
+		exynos_camera_picture_start(exynos_camera);
+}
+
+void exynos_camera_backend_cancel_picture(struct exynos_camera *exynos_camera)
+{
+	if (exynos_camera != NULL)
+		exynos_camera_picture_stop(exynos_camera);
+}
+
+int exynos_camera_backend_set_parameters(struct exynos_camera *exynos_camera,
+	const char *parameters)
+{
+	int rc;
+
+	if (exynos_camera == NULL || parameters == NULL)
+		return -EINVAL;
+
+	rc = exynos_params_string_set(exynos_camera, (char *) parameters);
+	if (rc < 0)
+		return rc;
+
+	return exynos_camera_params_apply(exynos_camera, false);
+}
+
+char *exynos_camera_backend_get_parameters(struct exynos_camera *exynos_camera)
+{
+	char *parameters;
+
+	if (exynos_camera == NULL)
+		return NULL;
+
+	parameters = exynos_params_string_get(exynos_camera);
+	return parameters == NULL ? strdup("") : parameters;
+}
+
+void exynos_camera_backend_free_parameters(char *parameters)
+{
+	free(parameters);
+}
+
+/*
+ * Camera1 compatibility ABI.  It is omitted entirely from camera.smdk4210;
+ * only the optional standalone legacy build retains these entry points.
+ */
+#ifndef EXYNOS_CAMERA_EMBEDDED_BACKEND
+int exynos_camera_backend_set_preview_window(struct exynos_camera *exynos_camera,
+	struct preview_stream_ops *w)
+{
+	int width, height, format, hal_format;
+	int rc;
+
+	if (exynos_camera == NULL)
+		return -EINVAL;
 
 	if (w == NULL)
 		return 0;
@@ -2825,6 +3412,16 @@ int exynos_camera_set_preview_window(struct camera_device *dev,
 		pthread_mutex_unlock(&exynos_camera->preview_lock_mutex);
 	}
 	return 0;
+}
+
+int exynos_camera_set_preview_window(struct camera_device *dev,
+	struct preview_stream_ops *w)
+{
+	if (dev == NULL || dev->priv == NULL)
+		return -EINVAL;
+
+	return exynos_camera_backend_set_preview_window(
+		(struct exynos_camera *) dev->priv, w);
 }
 
 void exynos_camera_set_callbacks(struct camera_device *dev,
@@ -3318,7 +3915,9 @@ struct hw_module_methods_t exynos_camera_module_methods = {
 	.open = exynos_camera_open,
 };
 
-struct camera_module HAL_MODULE_INFO_SYM = {
+#define EXYNOS_CAMERA_MODULE_INFO HAL_MODULE_INFO_SYM
+
+struct camera_module EXYNOS_CAMERA_MODULE_INFO = {
 	.common = {
 		.tag = HARDWARE_MODULE_TAG,
 		.hal_api_version = HARDWARE_HAL_API_VERSION,
@@ -3331,3 +3930,7 @@ struct camera_module HAL_MODULE_INFO_SYM = {
 	.get_number_of_cameras = exynos_camera_get_number_of_cameras,
 	.get_camera_info = exynos_camera_get_camera_info,
 };
+
+#undef EXYNOS_CAMERA_MODULE_INFO
+
+#endif /* !EXYNOS_CAMERA_EMBEDDED_BACKEND */

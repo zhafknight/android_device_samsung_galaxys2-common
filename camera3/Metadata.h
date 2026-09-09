@@ -5,7 +5,7 @@
 
 #include <cstdint>
 
-namespace n7000::camera3 {
+namespace camera3 {
 
 struct CameraDescriptor {
     int id;
@@ -24,4 +24,4 @@ camera_metadata_t* buildDefaultRequest(int id, int templateType);
 camera_metadata_t* buildResultMetadata(int id, int64_t timestamp, uint8_t afState,
                                        const int32_t* requestedCropRegion);
 
-}  // namespace n7000::camera3
+}  // namespace camera3

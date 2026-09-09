@@ -214,13 +214,11 @@ PRODUCT_PACKAGES += \
 PRODUCT_PACKAGES += \
     android.hardware.vibrator-service.samsung
 
-# Camera: HIDL provider -> HAL3 wrapper -> private HAL1 backend
+# Camera: HIDL provider -> single native HAL3 module -> Exynos V4L2/FIMC
 PRODUCT_PACKAGES += \
     android.hardware.camera.provider@2.4-impl \
     android.hardware.camera.provider@2.4-service-lazy \
-    camera.smdk4210 \
-    camera.smdk4210-hal1 \
-    libs5pjpeg
+    camera.smdk4210
 
 PRODUCT_VENDOR_PROPERTIES += \
     ro.camera.enableLazyHal=true

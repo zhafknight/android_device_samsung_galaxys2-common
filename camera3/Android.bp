@@ -5,14 +5,19 @@ cc_library_shared {
     compile_multilib: "32",
 
     srcs: [
-        "LegacyCamera3.cpp",
+        "Camera3.cpp",
+        "SecFimcBackend.cpp",
         "Metadata.cpp",
+        "exynos_camera.c",
+        "exynos_exif.c",
+        "exynos_param.c",
+        "exynos_v4l2.c",
+        ":smdk4210_s5p_jpeg_backend_sources",
     ],
 
     shared_libs: [
         "libcamera_metadata",
         "libcutils",
-        "libdl",
         "libhardware",
         "liblog",
         "libsync",
@@ -23,11 +28,18 @@ cc_library_shared {
         "libhardware_headers",
     ],
 
+    include_dirs: [
+        "hardware/samsung/exynos4/hal/include",
+        "hardware/samsung/exynos4/hal/libs5pjpeg",
+    ],
+
     cflags: [
         "-Wall",
         "-Wextra",
         "-Wno-unused-parameter",
         "-Wno-missing-field-initializers",
+        "-fvisibility=hidden",
+        "-DEXYNOS_CAMERA_EMBEDDED_BACKEND",
     ],
 
     cpp_std: "gnu++17",
