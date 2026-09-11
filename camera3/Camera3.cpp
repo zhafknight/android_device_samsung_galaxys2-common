@@ -609,13 +609,15 @@ private:
                 // hardware encoder consumes its physical planes directly.
                 // No CPU agent owns the recording stream.
                 stream->usage |= GRALLOC_USAGE_HW_CAMERA_WRITE |
-                                 GRALLOC_USAGE_HW_VIDEO_ENCODER;
+                                 GRALLOC_USAGE_HW_VIDEO_ENCODER |
+                                 GRALLOC_USAGE_CAMERA3_CONTIGUOUS;
                 stream->usage &= ~(GRALLOC_USAGE_SW_READ_MASK |
                                    GRALLOC_USAGE_SW_WRITE_MASK);
             } else {
                 stream->usage |= GRALLOC_USAGE_SW_READ_OFTEN |
                                  GRALLOC_USAGE_SW_WRITE_OFTEN |
-                                 GRALLOC_USAGE_HW_CAMERA_WRITE;
+                                 GRALLOC_USAGE_HW_CAMERA_WRITE |
+                                 GRALLOC_USAGE_CAMERA3_CONTIGUOUS;
             }
             ALOGI("Device-only configured %s stream: format=0x%x usage=0x%llx "
                   "size=%ux%u",
@@ -2872,6 +2874,7 @@ private:
                 nativePreviewHeight_ * 4 == previewHeight_ * 3;
         const bool contiguousNv21 = destination != nullptr &&
                 (destination->flags & private_handle_t::PRIV_FLAGS_USES_ION) &&
+                (destination->flags & private_handle_t::PRIV_FLAGS_CONTIGUOUS_ION) &&
                 destination->paddr != 0 &&
                 destination->format == HAL_PIXEL_FORMAT_YCrCb_420_SP &&
                 sourceYAddr != 0 && sourceCbcrAddr != 0;
@@ -3055,6 +3058,7 @@ private:
         private_handle_t* destination = private_handle_t::dynamicCast(*target->buffer);
         if (destination == nullptr ||
             !(destination->flags & private_handle_t::PRIV_FLAGS_USES_ION) ||
+            !(destination->flags & private_handle_t::PRIV_FLAGS_CONTIGUOUS_ION) ||
             destination->paddr == 0) {
             ALOGE("Encoder buffer for frame %u is not contiguous ION memory",
                   frame->frameNumber);
