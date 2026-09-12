@@ -1,0 +1,8 @@
+# Backlight panel used by the Samsung light HAL.
+genfscon sysfs /devices/platform/s5p-dsim.0/s6e8aa0/backlight/panel u:object_r:sysfs_display:s0
+
+# input4 is the light sensor on smdk4210.
+genfscon sysfs /devices/virtual/input/input4/enable u:object_r:sysfs_light_sensor:s0
+
+# input3 is the proximity sensor on smdk4210 (verified against its sysfs inode).
+genfscon sysfs /devices/virtual/input/input3/enable u:object_r:sysfs_proximity:s0

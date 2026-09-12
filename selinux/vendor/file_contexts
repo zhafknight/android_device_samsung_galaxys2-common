@@ -2,6 +2,16 @@
 /dev/mali                                                        u:object_r:gpu_device:s0
 /dev/ump                                                         u:object_r:gpu_device:s0
 /dev/fimg2d                                                      u:object_r:gpu_device:s0
+/(vendor|system/vendor)/lib/hw/android\.hardware\.graphics\.allocator@2\.0-impl-exynos4\.so u:object_r:same_process_hal_file:s0
+/(vendor|system/vendor)/lib/hw/android\.hardware\.graphics\.mapper@2\.0-impl-exynos4\.so    u:object_r:same_process_hal_file:s0
+/(vendor|system/vendor)/lib/hw/gralloc\.exynos4\.so                                      u:object_r:same_process_hal_file:s0
+/(vendor|system/vendor)/lib/android\.hardware\.graphics\.allocator@[2-4]\.0\.so          u:object_r:same_process_hal_file:s0
+/(vendor|system/vendor)/lib/lib(Mali|UMP|C|secion|binder|stdc\+\+_vendor|ui)\.so           u:object_r:same_process_hal_file:s0
+
+# Sensors (passthrough HAL loaded by system_server)
+/(vendor|system/vendor)/lib/hw/android\.hardware\.sensors@1\.0-impl\.so                  u:object_r:same_process_hal_file:s0
+/(vendor|system/vendor)/lib/hw/sensors\.exynos4\.so                                     u:object_r:same_process_hal_file:s0
+/(vendor|system/vendor)/lib/libakm\.so                                                   u:object_r:same_process_hal_file:s0
 
 # RIL
 /dev/link_pm                                                     u:object_r:radio_device:s0
@@ -19,7 +29,7 @@
 /dev/block/mmcblk0p8                                             u:object_r:efs_block_device:s0
 /dev/block/mmcblk0p9                                             u:object_r:system_block_device:s0
 /dev/block/mmcblk0p10                                            u:object_r:userdata_block_device:s0
-/dev/block/mmcblk0p12                                            u:object_r:preload_block_device:s0
+/dev/block/mmcblk0p12                                            u:object_r:misc_block_device:s0
 /dev/block/zram0                                                 u:object_r:swap_block_device:s0
 /efs                                                             u:object_r:efs_device_file:s0
 /misc                                                            u:object_r:misc_device_file:s0
@@ -35,13 +45,16 @@
 /sys/devices/platform/bcm4330_bluetooth/rfkill/rfkill0/state     u:object_r:sysfs_bluetooth_writable:s0
 
 # GPS
-#/dev/ttySAC1                                                     u:object_r:gps_device:s0
+/dev/socket/gps                                                  u:object_r:gps_socket:s0
+/(vendor|system/vendor)/bin/gpsd                                 u:object_r:hal_gnss_default_exec:s0
+/data/system/\.gps\.interface\.pipe\..*                         u:object_r:gps_data_file:s0
 
 # Sensors
 /dev/akm8975                                                     u:object_r:sensors_device:s0
 
 # Vibrator
 /sys/devices/virtual/timed_output/vibrator/enable(/.*)?		u:object_r:sysfs_vibrator:s0
+/(vendor|system/vendor)/bin/hw/android\.hardware\.vibrator-service\.samsung u:object_r:hal_vibrator_default_exec:s0
 
 # WiFi
 /dev/rfkill                                                      u:object_r:rfkill_device:s0
@@ -125,6 +138,15 @@
 # Gatekeeper
 /(vendor|system/vendor)/bin/hw/android\.hardware\.gatekeeper@1\.0-service\.software       u:object_r:hal_gatekeeper_default_exec:s0
 
+# ODM lives below /system/vendor on this non-Treble device.
+/system/vendor/odm/etc/selinux/odm_sepolicy\.cil                 u:object_r:sepolicy_file:s0
+/system/vendor/odm/etc/selinux/odm_file_contexts                 u:object_r:file_contexts_file:s0
+/system/vendor/odm/etc/selinux/odm_seapp_contexts                u:object_r:seapp_contexts_file:s0
+/system/vendor/odm/etc/selinux/odm_property_contexts             u:object_r:property_contexts_file:s0
+/system/vendor/odm/etc/selinux/odm_service_contexts              u:object_r:vendor_service_contexts_file:s0
+/system/vendor/odm/etc/selinux/odm_hwservice_contexts            u:object_r:hwservice_contexts_file:s0
+/system/vendor/odm/etc/selinux/odm_mac_permissions\.xml          u:object_r:mac_perms_file:s0
+
 /system/bin/clean_scratch_files                         u:object_r:clean_scratch_files_exec:s0
 
 # Light
@@ -132,4 +154,3 @@
 
 # Bluetooth
 /(vendor|system/vendor)/bin/hw/android\.hardware\.audio\.service\.samsung\.legacy u:object_r:hal_audio_default_exec:s0
-

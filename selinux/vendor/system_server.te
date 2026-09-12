@@ -24,10 +24,10 @@ allow system_server exported_camera_prop:file { getattr open read write };
 allow system_server userspace_reboot_config_prop:file { getattr open read write };
 allow system_server userspace_reboot_exported_prop:file { getattr open read write };
 allow system_server hal_light_default:process { signal };
+allow system_server { sysfs_light_sensor sysfs_proximity }:file { open read write };
 
 # Only allowed because of TARGET_NEEDS_PLATFORM_TEXT_RELOCATIONS
 allow system_server vendor_file:file execmod;
 
 allow system_server build_bootimage_prop:file { getattr open read };
 allow system_server vendor_default_prop:file { getattr open read };
-

@@ -4,3 +4,4 @@ allow hal_camera_default vndbinder_device:chr_file { ioctl open read write };
 allow hal_camera_default hal_graphics_mapper_hwservice:hwservice_manager find;
 allow hal_camera_default video_device:chr_file { getattr ioctl map open read write };
 allow hal_camera_default ion_device:chr_file { getattr ioctl map open read write };
+get_prop(hal_camera_default, camera_config_prop)

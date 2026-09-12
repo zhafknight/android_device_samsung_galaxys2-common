@@ -15,3 +15,6 @@ allow hal_gnss_default self:tcp_socket { connect create getopt setopt read write
 # allow hal_gnss_default system_suspend:binder call;
 allow hal_gnss_default system_data_root_file:dir { add_name write };
 allow hal_gnss_default system_data_root_file:file { create getattr open read write };
+allow hal_gnss_default gps_data_file:fifo_file { create getattr open read setattr write };
+type_transition hal_gnss_default system_data_file:fifo_file gps_data_file ".gps.interface.pipe.to_gpsd";
+type_transition hal_gnss_default system_data_file:fifo_file gps_data_file ".gps.interface.pipe.to_jni";
