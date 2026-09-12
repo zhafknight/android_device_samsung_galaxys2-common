@@ -16,11 +16,19 @@ extern "C" {
 
 struct exynos_camera;
 
+/*
+ * A positive callback result transfers the dequeued FIMC2 recording buffer
+ * to the Camera3 FIMC1 worker. The backend must not QBUF that index until the
+ * worker explicitly returns it through
+ * exynos_camera_backend_requeue_recording_buffer().
+ */
+#define EXYNOS_CAMERA_FRAME_RECORDING_OWNED 1
+
 typedef int (*exynos_camera_backend_frame_callback)(const void *preview_data,
 	size_t preview_size, const void *recording_data, size_t recording_size,
 	uint32_t preview_y_addr, uint32_t preview_cbcr_addr,
 	uint32_t recording_y_addr, uint32_t recording_cbcr_addr,
-	int64_t timestamp_ns, void *user);
+	int recording_index, int64_t timestamp_ns, void *user);
 
 int exynos_camera_backend_get_number_of_cameras(void);
 int exynos_camera_backend_get_camera_info(int id, int *facing, int *orientation);
@@ -41,6 +49,8 @@ void exynos_camera_backend_enable_messages(struct exynos_camera *camera,
 	int32_t message_types);
 void exynos_camera_backend_set_frame_callback(struct exynos_camera *camera,
 	exynos_camera_backend_frame_callback callback, void *user);
+int exynos_camera_backend_requeue_recording_buffer(struct exynos_camera *camera,
+	int index);
 void exynos_camera_backend_set_recording_stream(struct exynos_camera *camera,
 	int enabled);
 

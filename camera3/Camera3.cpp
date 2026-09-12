@@ -399,8 +399,12 @@ private:
         int width = 0;
         int height = 0;
         camera3_stream_buffer_t* target = nullptr;
+        buffer_handle_t* previewHandle = nullptr;
+        int recordingIndex = -1;
         uint64_t sequence = 0;
     };
+
+    static constexpr size_t kVideoBlitQueueDepth = 2;
 
     // The legacy preview window is strictly serial: it dequeues one target,
     // copies one V4L2 frame, and enqueues that target before requesting the
@@ -737,9 +741,9 @@ private:
         videoPillarboxBuffers_.clear();
         previewDmaCount_ = 0;
         previewCpuCopyCount_ = 0;
-        videoBlitCount_ = 0;
-        videoFenceWaitNs_ = 0;
-        videoBlitProcessingNs_ = 0;
+        videoBlitCount_.store(0, std::memory_order_relaxed);
+        videoFenceWaitNs_.store(0, std::memory_order_relaxed);
+        videoBlitProcessingNs_.store(0, std::memory_order_relaxed);
         resetPreviewScaler(sessionGeneration_.load());
         if (videoStream_ != nullptr && previewStream_ != nullptr &&
             isNativeHdRecordingSize(videoStream_->width, videoStream_->height) &&
@@ -1700,16 +1704,22 @@ private:
     uint64_t queueVideoBlit(const std::shared_ptr<PendingFrame>& frame,
                             const void* source, size_t sourceSize,
                             uint32_t sourceYAddr, uint32_t sourceCbcrAddr,
-                            camera3_stream_buffer_t* target) {
-        if (frame == nullptr || target == nullptr) {
+                            camera3_stream_buffer_t* target,
+                            buffer_handle_t* previewHandle,
+                            int recordingIndex) {
+        if (frame == nullptr || target == nullptr || previewHandle == nullptr ||
+            recordingIndex < 0) {
             return 0;
         }
 
-        std::unique_lock<std::mutex> lock(videoBlitMutex_);
-        videoBlitDoneCv_.wait(lock, [this] {
-            return videoBlitExit_ || (!videoBlitPending_ && !videoBlitActive_);
-        });
+        std::lock_guard<std::mutex> lock(videoBlitMutex_);
         if (videoBlitExit_) {
+            return 0;
+        }
+
+        const size_t outstanding = videoBlitQueue_.size() +
+                (videoBlitActive_ ? 1U : 0U);
+        if (outstanding >= kVideoBlitQueueDepth) {
             return 0;
         }
 
@@ -1722,25 +1732,12 @@ private:
         job.width = nativeVideoWidth_;
         job.height = nativeVideoHeight_;
         job.target = target;
+        job.previewHandle = previewHandle;
+        job.recordingIndex = recordingIndex;
         job.sequence = ++videoBlitSubmittedSequence_;
-        videoBlitJob_ = std::move(job);
-        videoBlitPending_ = true;
+        videoBlitQueue_.push_back(std::move(job));
         videoBlitCv_.notify_one();
         return videoBlitSubmittedSequence_;
-    }
-
-    int waitForVideoBlit(uint64_t sequence) {
-        if (sequence == 0) {
-            return -ECANCELED;
-        }
-        std::unique_lock<std::mutex> lock(videoBlitMutex_);
-        videoBlitDoneCv_.wait(lock, [this, sequence] {
-            return videoBlitCompletedSequence_ >= sequence ||
-                    (videoBlitExit_ && !videoBlitPending_ && !videoBlitActive_);
-        });
-        return videoBlitCompletedSequence_ >= sequence
-                ? videoBlitResult_
-                : -ECANCELED;
     }
 
     void videoBlitLoop() {
@@ -1750,13 +1747,13 @@ private:
             {
                 std::unique_lock<std::mutex> lock(videoBlitMutex_);
                 videoBlitCv_.wait(lock, [this] {
-                    return videoBlitExit_ || videoBlitPending_;
+                    return videoBlitExit_ || !videoBlitQueue_.empty();
                 });
-                if (videoBlitExit_ && !videoBlitPending_) {
+                if (videoBlitExit_ && videoBlitQueue_.empty()) {
                     return;
                 }
-                job = std::move(videoBlitJob_);
-                videoBlitPending_ = false;
+                job = std::move(videoBlitQueue_.front());
+                videoBlitQueue_.pop_front();
                 videoBlitActive_ = true;
             }
 
@@ -1765,13 +1762,33 @@ private:
                     job.sourceYAddr, job.sourceCbcrAddr,
                     job.width, job.height, job.target);
 
+            /*
+             * FIMC1 has completed its read from the physical FIMC2 source.
+             * Finish the Camera3 frame before returning node 2 so a flush sees
+             * either a completed frame or a still-held recording buffer, never
+             * an ambiguous half-completed ownership state.
+             */
+            const int completeRc = completeNativeFrame(
+                    job.previewHandle, false, nullptr, 0, 0, 0, true, rc);
+            if (completeRc != 0) {
+                ALOGE("Async native frame completion failed for frame %u: %d",
+                      job.frame != nullptr ? job.frame->frameNumber : 0, completeRc);
+            }
+
+            const int qbufRc = backend_ == nullptr
+                    ? -ENODEV
+                    : exynos_camera_backend_requeue_recording_buffer(
+                              backend_, job.recordingIndex);
+            if (qbufRc != 0) {
+                ALOGE("Could not requeue async FIMC2 buffer %d: %d",
+                      job.recordingIndex, qbufRc);
+            }
+
             {
                 std::lock_guard<std::mutex> lock(videoBlitMutex_);
-                videoBlitResult_ = rc;
-                videoBlitCompletedSequence_ = job.sequence;
                 videoBlitActive_ = false;
             }
-            videoBlitDoneCv_.notify_all();
+            videoBlitCv_.notify_all();
         }
     }
 
@@ -1781,7 +1798,6 @@ private:
             videoBlitExit_ = true;
         }
         videoBlitCv_.notify_all();
-        videoBlitDoneCv_.notify_all();
         if (videoBlitWorker_.joinable()) {
             videoBlitWorker_.join();
         }
@@ -2691,7 +2707,7 @@ private:
                                     const void* recordingData, size_t recordingSize,
                                     uint32_t previewYAddr, uint32_t previewCbcrAddr,
                                     uint32_t recordingYAddr, uint32_t recordingCbcrAddr,
-                                    int64_t timestampNs, void* user) {
+                                    int recordingIndex, int64_t timestampNs, void* user) {
         auto* self = static_cast<NativeCamera3Device*>(user);
         return self == nullptr
                 ? -EINVAL
@@ -2699,14 +2715,14 @@ private:
                                            recordingData, recordingSize,
                                            previewYAddr, previewCbcrAddr,
                                            recordingYAddr, recordingCbcrAddr,
-                                           timestampNs);
+                                           recordingIndex, timestampNs);
     }
 
     int consumeNativeFrame(const void* previewData, size_t previewSize,
                            const void* recordingData, size_t recordingSize,
                            uint32_t previewYAddr, uint32_t previewCbcrAddr,
                            uint32_t recordingYAddr, uint32_t recordingCbcrAddr,
-                           int64_t timestampNs) {
+                           int recordingIndex, int64_t timestampNs) {
         if (previewData == nullptr || gralloc_ == nullptr) {
             return -EINVAL;
         }
@@ -2752,36 +2768,43 @@ private:
                 }
             }
         }
-        uint64_t videoBlitSequence = 0;
-        if (capturedFrame != nullptr && capturedFrame->videoBuffer.has_value()) {
-            videoBlitSequence = queueVideoBlit(
-                    capturedFrame, recordingData, recordingSize,
-                    recordingYAddr, recordingCbcrAddr,
-                    &*capturedFrame->videoBuffer);
-        }
-
+        /*
+         * Copy preview first, then hand the recording source to the FIMC1
+         * worker. The old code queued FIMC1 and immediately waited for it, so
+         * the V4L2 capture thread still stalled on every video frame despite
+         * having a worker thread.
+         */
         const int64_t previewCopyStartNs = systemTime(SYSTEM_TIME_MONOTONIC);
         const int previewTransferRc = copyNativePreviewToBuffer(
                 previewData, requiredSize, previewYAddr, previewCbcrAddr, handle);
         const int64_t previewCopyNs =
                 systemTime(SYSTEM_TIME_MONOTONIC) - previewCopyStartNs;
-        const int videoRc = videoBlitSequence != 0
-                ? waitForVideoBlit(videoBlitSequence)
-                : 0;
         if (previewTransferRc != 0) {
             ALOGE("Could not transfer native Camera3 preview buffer: %d",
                   previewTransferRc);
             return completeNativeFrame(handle, true, recordingData, recordingSize,
-                                       recordingYAddr, recordingCbcrAddr,
-                                       videoBlitSequence != 0, videoRc);
+                                       recordingYAddr, recordingCbcrAddr, false, 0);
         }
 
-        // V4L2 callbacks are serialized in dequeue order, preserving Camera3's
-        // monotonically increasing result order while using a real capture time.
-        const int completeRc = completeNativeFrame(
-                handle, false, recordingData, recordingSize,
-                recordingYAddr, recordingCbcrAddr,
-                videoBlitSequence != 0, videoRc);
+        bool videoDeferred = false;
+        if (capturedFrame != nullptr && capturedFrame->videoBuffer.has_value() &&
+            recordingIndex >= 0) {
+            const uint64_t videoBlitSequence = queueVideoBlit(
+                    capturedFrame, recordingData, recordingSize,
+                    recordingYAddr, recordingCbcrAddr,
+                    &*capturedFrame->videoBuffer, handle, recordingIndex);
+            videoDeferred = videoBlitSequence != 0;
+        }
+
+        int completeRc = 0;
+        if (!videoDeferred) {
+            // Queue saturation is exceptional. Preserve correctness by falling
+            // back to the existing synchronous path rather than reusing a
+            // FIMC2 source buffer while FIMC1 still owns it.
+            completeRc = completeNativeFrame(
+                    handle, false, recordingData, recordingSize,
+                    recordingYAddr, recordingCbcrAddr, false, 0);
+        }
         const int64_t processingNs =
                 systemTime(SYSTEM_TIME_MONOTONIC) - processingStartNs;
         if (nativeFrameWindowStartNs_ == 0) {
@@ -2820,13 +2843,19 @@ private:
                     ? 0.0
                     : static_cast<double>(shutterDeliveryNs) / 1.0e6 /
                             static_cast<double>(shutterDeliveryCount);
-            if (videoBlitCount_ != 0) {
+            const uint32_t videoBlitCount =
+                    videoBlitCount_.exchange(0, std::memory_order_relaxed);
+            const int64_t videoFenceWaitNs =
+                    videoFenceWaitNs_.exchange(0, std::memory_order_relaxed);
+            const int64_t videoBlitProcessingNs =
+                    videoBlitProcessingNs_.exchange(0, std::memory_order_relaxed);
+            if (videoBlitCount != 0) {
                 const double averageFenceMs =
-                        static_cast<double>(videoFenceWaitNs_) / 1.0e6 /
-                        static_cast<double>(videoBlitCount_);
+                        static_cast<double>(videoFenceWaitNs) / 1.0e6 /
+                        static_cast<double>(videoBlitCount);
                 const double averageBlitMs =
-                        static_cast<double>(videoBlitProcessingNs_) / 1.0e6 /
-                        static_cast<double>(videoBlitCount_);
+                        static_cast<double>(videoBlitProcessingNs) / 1.0e6 /
+                        static_cast<double>(videoBlitCount);
                 ALOGI("Native capture cadence %.1f fps; capture thread %.1f ms/frame "
                       "(request %.1f, preview transfer %.1f, async shutter %.1f, "
                       "result %.1f ms); preview FIMC3/CPU %u/%u; encoder fence "
@@ -2834,7 +2863,7 @@ private:
                       fps, averageProcessingMs, averageDequeueMs,
                       averagePreviewCopyMs, averageShutterMs, averageResultMs,
                       previewDmaCount_, previewCpuCopyCount_, averageFenceMs,
-                      averageBlitMs, videoBlitCount_);
+                      averageBlitMs, videoBlitCount);
             } else {
                 ALOGI("Native capture cadence %.1f fps; capture thread %.1f ms/frame "
                       "(request %.1f, preview transfer %.1f, async shutter %.1f, "
@@ -2849,11 +2878,9 @@ private:
             nativePreviewCopyNs_ = 0;
             previewDmaCount_ = 0;
             previewCpuCopyCount_ = 0;
-            videoBlitCount_ = 0;
-            videoFenceWaitNs_ = 0;
-            videoBlitProcessingNs_ = 0;
+            // Video worker counters were atomically reset above.
         }
-        return completeRc;
+        return videoDeferred ? EXYNOS_CAMERA_FRAME_RECORDING_OWNED : completeRc;
     }
 
     int copyNativePreviewToBuffer(const void* source, size_t sourceSize,
@@ -3065,6 +3092,8 @@ private:
             return -EINVAL;
         }
 
+        std::lock_guard<std::mutex> blitterLock(videoBlitterIoMutex_);
+
         const int destinationFormat = target->stream->format;
         if (destinationFormat != HAL_PIXEL_FORMAT_YCbCr_420_SP &&
             destinationFormat != HAL_PIXEL_FORMAT_YCrCb_420_SP) {
@@ -3186,9 +3215,9 @@ private:
                 dequeuedIndex == 0;
         const int64_t blitProcessingNs =
                 systemTime(SYSTEM_TIME_MONOTONIC) - blitStartNs;
-        ++videoBlitCount_;
-        videoFenceWaitNs_ += fenceWaitNs;
-        videoBlitProcessingNs_ += blitProcessingNs;
+        videoBlitCount_.fetch_add(1, std::memory_order_relaxed);
+        videoFenceWaitNs_.fetch_add(fenceWaitNs, std::memory_order_relaxed);
+        videoBlitProcessingNs_.fetch_add(blitProcessingNs, std::memory_order_relaxed);
         if (!blitOk) {
             ALOGE("FIMC1 video blit failed for frame %u", frame->frameNumber);
             resetVideoBlitter();
@@ -3687,16 +3716,13 @@ private:
     bool resultWorkerActive_ = false;
 
     std::mutex videoBlitMutex_;
+    std::mutex videoBlitterIoMutex_;
     std::condition_variable videoBlitCv_;
-    std::condition_variable videoBlitDoneCv_;
     std::thread videoBlitWorker_;
-    NativeVideoBlitJob videoBlitJob_{};
+    std::deque<NativeVideoBlitJob> videoBlitQueue_;
     bool videoBlitExit_ = false;
-    bool videoBlitPending_ = false;
     bool videoBlitActive_ = false;
     uint64_t videoBlitSubmittedSequence_ = 0;
-    uint64_t videoBlitCompletedSequence_ = 0;
-    int videoBlitResult_ = 0;
 
     std::mutex previewScalerMutex_;
     std::condition_variable previewScalerCv_;
@@ -3723,9 +3749,9 @@ private:
     std::atomic<uint32_t> nativeShutterDeliveryCount_{0};
     uint32_t previewDmaCount_ = 0;
     uint32_t previewCpuCopyCount_ = 0;
-    uint32_t videoBlitCount_ = 0;
-    int64_t videoFenceWaitNs_ = 0;
-    int64_t videoBlitProcessingNs_ = 0;
+    std::atomic<uint32_t> videoBlitCount_{0};
+    std::atomic<int64_t> videoFenceWaitNs_{0};
+    std::atomic<int64_t> videoBlitProcessingNs_{0};
 
     camera3_stream_t* previewStream_ = nullptr;
     camera3_stream_t* videoStream_ = nullptr;

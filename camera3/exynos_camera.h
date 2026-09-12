@@ -186,7 +186,7 @@ typedef int (*exynos_camera_frame_callback)(const void *preview_data,
 	size_t preview_size, const void *recording_data, size_t recording_size,
 	uint32_t preview_y_addr, uint32_t preview_cbcr_addr,
 	uint32_t recording_y_addr, uint32_t recording_cbcr_addr,
-	int64_t timestamp_ns, void *user);
+	int recording_index, int64_t timestamp_ns, void *user);
 
 struct exynos_camera {
 	int v4l2_fds[EXYNOS_CAMERA_MAX_V4L2_NODES_COUNT];
@@ -239,6 +239,7 @@ struct exynos_camera {
 
 	// Recording
 	pthread_mutex_t recording_mutex;
+	pthread_cond_t recording_buffer_cond;
 	int synchronization_initialized;
 
 	int recording_enabled;
@@ -247,6 +248,7 @@ struct exynos_camera {
 	int recording_msg_stop;
 	camera_memory_t *recording_memory;
 	int recording_buffers_count;
+	int recording_buffers_held;
 	int recording_frame_size;
 	void *recording_staging;
 	size_t recording_staging_size;

@@ -167,7 +167,7 @@ int exynos_v4l2_poll(struct exynos_camera *exynos_camera, int exynos_v4l2_id)
 	events.fd = fd;
 	events.events = POLLIN | POLLERR;
 
-	rc = poll(&events, 1, 1000);
+	rc = poll(&events, 1, 100);
 	if (rc < 0 || events.revents & POLLERR) {
 		ALOGE("%s: poll failed", __func__);
 		return -1;

@@ -257,6 +257,10 @@ int exynos_camera_init(struct exynos_camera *exynos_camera, int id)
 	rc = pthread_mutex_init(&exynos_camera->recording_mutex, NULL);
 	if (rc != 0)
 		goto error_preview_lock_mutex;
+	rc = pthread_cond_init(&exynos_camera->recording_buffer_cond, NULL);
+	if (rc != 0)
+		goto error_recording_mutex;
+	exynos_camera->recording_buffers_held = 0;
 	exynos_camera->synchronization_initialized = 1;
 
 	// Init FIMC1
@@ -333,6 +337,8 @@ int exynos_camera_init(struct exynos_camera *exynos_camera, int id)
 
 	return 0;
 
+error_recording_mutex:
+	pthread_mutex_destroy(&exynos_camera->recording_mutex);
 error_preview_lock_mutex:
 	pthread_mutex_destroy(&exynos_camera->preview_lock_mutex);
 error_preview_mutex:
@@ -367,6 +373,7 @@ void exynos_camera_deinit(struct exynos_camera *exynos_camera)
 	exynos_v4l2_close(exynos_camera, 2);
 
 	if (exynos_camera->synchronization_initialized) {
+		pthread_cond_destroy(&exynos_camera->recording_buffer_cond);
 		pthread_mutex_destroy(&exynos_camera->recording_mutex);
 		pthread_mutex_destroy(&exynos_camera->preview_lock_mutex);
 		pthread_mutex_destroy(&exynos_camera->preview_mutex);
@@ -2355,22 +2362,47 @@ int exynos_camera_preview(struct exynos_camera *exynos_camera)
 		 * precisely while recording is active.
 		 */
 #endif
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+		/*
+		 * A native Camera3 video request may hand this dequeued FIMC2 buffer
+		 * to the asynchronous FIMC1 worker. Track that ownership so STREAMOFF
+		 * cannot tear down node 2 while FIMC1 is still reading its physical
+		 * source planes.
+		 */
+		if (recording_index >= 0) {
+			pthread_mutex_lock(&exynos_camera->recording_mutex);
+			exynos_camera->recording_buffers_held++;
+			pthread_mutex_unlock(&exynos_camera->recording_mutex);
+		}
+#endif
 		rc = exynos_camera->frame_callback(preview_data, frame_size,
 #ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
 			recording_data, recording_frame_size,
 			preview_y_addr, preview_cbcr_addr,
 			recording_y_addr, recording_cbcr_addr,
+			recording_index,
 #else
 			NULL, 0,
 			0, 0,
 			0, 0,
+			-1,
 #endif
 			timestamp, exynos_camera->frame_callback_user);
 #ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
-		if (recording_index >= 0 &&
-			exynos_v4l2_qbuf_cap(exynos_camera, 2, recording_index) < 0) {
-			ALOGE("%s: recording qbuf failed!", __func__);
-			goto error;
+		if (recording_index >= 0 && rc != EXYNOS_CAMERA_FRAME_RECORDING_OWNED) {
+			int recording_qbuf_rc =
+				exynos_v4l2_qbuf_cap(exynos_camera, 2, recording_index);
+
+			pthread_mutex_lock(&exynos_camera->recording_mutex);
+			if (exynos_camera->recording_buffers_held > 0)
+				exynos_camera->recording_buffers_held--;
+			pthread_cond_broadcast(&exynos_camera->recording_buffer_cond);
+			pthread_mutex_unlock(&exynos_camera->recording_mutex);
+
+			if (recording_qbuf_rc < 0) {
+				ALOGE("%s: recording qbuf failed!", __func__);
+				goto error;
+			}
 		}
 #endif
 		if (index >= 0 && exynos_v4l2_qbuf_cap(exynos_camera, 0, index) < 0) {
@@ -3095,6 +3127,20 @@ void exynos_camera_recording_stop(struct exynos_camera *exynos_camera)
 	//Disables the capture routine in exynos_camera_preview running in seperate thread.
 	exynos_camera->recording_enabled = 0;
 
+#ifdef EXYNOS_CAMERA_EMBEDDED_BACKEND
+	/*
+	 * Camera3 can return from the V4L2 callback before FIMC1 has finished
+	 * consuming a dequeued FIMC2 buffer. Wait until every such buffer has
+	 * been requeued before STREAMOFF/REQBUFS(0) releases node-2 storage.
+	 */
+	while (exynos_camera->recording_buffers_held > 0) {
+		ALOGV("%s: waiting for %d asynchronous recording buffer(s)",
+			__func__, exynos_camera->recording_buffers_held);
+		pthread_cond_wait(&exynos_camera->recording_buffer_cond,
+			&exynos_camera->recording_mutex);
+	}
+#endif
+
 	//Stop recording the stream.
 	rc = exynos_v4l2_streamoff_cap(exynos_camera, 2);
 	if (rc < 0) {
@@ -3240,6 +3286,36 @@ void exynos_camera_backend_set_frame_callback(struct exynos_camera *exynos_camer
 
 	exynos_camera->frame_callback = callback;
 	exynos_camera->frame_callback_user = user;
+}
+
+int exynos_camera_backend_requeue_recording_buffer(struct exynos_camera *exynos_camera,
+	int index)
+{
+	int rc;
+
+	if (exynos_camera == NULL || index < 0)
+		return -EINVAL;
+
+	/*
+	 * FIMC1 has finished reading this node-2 buffer. QBUF it before dropping
+	 * the held count so recording_stop() cannot STREAMOFF the node in between.
+	 */
+	rc = exynos_v4l2_qbuf_cap(exynos_camera, 2, index);
+
+	pthread_mutex_lock(&exynos_camera->recording_mutex);
+	if (exynos_camera->recording_buffers_held > 0) {
+		exynos_camera->recording_buffers_held--;
+	} else {
+		ALOGW("%s: recording buffer %d was not marked held", __func__, index);
+	}
+	pthread_cond_broadcast(&exynos_camera->recording_buffer_cond);
+	pthread_mutex_unlock(&exynos_camera->recording_mutex);
+
+	if (rc < 0)
+		ALOGE("%s: qbuf failed for asynchronous recording buffer %d",
+			__func__, index);
+
+	return rc;
 }
 
 void exynos_camera_backend_set_recording_stream(struct exynos_camera *exynos_camera,
