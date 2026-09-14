@@ -384,6 +384,17 @@ on post-fs-data
 # Persistent logcat
     mkdir /data/.logs 0775 system log
 
+# MediaProvider Permisions
+    mkdir /data/media/0/.transforms 2770 media_rw media_rw
+    mkdir /data/media/0/.transforms/recovery 2770 media_rw media_rw
+    mkdir /data/media/0/.transforms/recovery/leveldb-internal 2770 media_rw media_rw
+    mkdir /data/media/0/.transforms/recovery/leveldb-external_primary 2770 media_rw media_rw
+    mkdir /data/media/0/.transforms/recovery/leveldb-ownership 2770 media_rw media_rw
+    chown media_rw media_rw /data/media/0/.transforms
+    chmod 2770 /data/media/0/.transforms
+    exec - root root -- /system/bin/chown -R media_rw:media_rw /data/media/0/.transforms/recovery
+    exec - root root -- /system/bin/chmod -R ug+rwX /data/media/0/.transforms/recovery
+
 on boot
     setprop wifi.interface wlan0
 
