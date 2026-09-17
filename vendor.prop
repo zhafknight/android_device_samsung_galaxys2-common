@@ -136,9 +136,7 @@ ro.hardware.gatekeeper=mdfpp
 persist.backup.ntpServer=0.pool.ntp.org
 
 # Graphics
-debug.egl.hw=0
 debug.sf.enable_gl_backpressure=1
-debug.sf.hw=0
 debug.renderengine.backend=gles
 persist.demo.hdmirotationlock=false
 ro.hardware.egl=mali
