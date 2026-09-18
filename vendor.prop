@@ -33,7 +33,6 @@ vendor.audio.feature.compress_meta_data.enable=true
 vendor.audio.feature.concurrent_capture.enable=false
 vendor.audio.feature.custom_stereo.enable=true
 vendor.audio.feature.deepbuffer_as_primary.enable=false
-vendor.audio.feature.display_port.enable=true
 vendor.audio.feature.dsm_feedback.enable=false
 vendor.audio.feature.dynamic_ecns.enable=false
 vendor.audio.feature.ext_hw_plugin.enable=false
@@ -106,10 +105,6 @@ persist.bluetooth.a2dp_offload.disabled=false
 persist.sys.fflag.override.settings_bluetooth_hearing_aid=true
 persist.vendor.bt.aac_frm_ctl.enabled=true
 persist.vendor.bt.aac_vbr_frm_ctl.enabled=true
-persist.vendor.qcom.bluetooth.a2dp_offload_cap=sbc-aptx-aptxtws-aptxhd-aac-ldac-aptxadaptiver2
-persist.vendor.qcom.bluetooth.aac_frm_ctl.enabled=true
-persist.vendor.qcom.bluetooth.aac_vbr_ctl.enabled=true
-persist.vendor.qcom.bluetooth.aptxadaptiver2_1_support=true
 
 ro.bluetooth.a2dp_offload.supported=true
 
@@ -122,9 +117,7 @@ dalvik.vm.heapstartsize=8m
 dalvik.vm.heaptargetutilization=0.75
 
 # Display
-debug.gralloc.gfx_ubwc_disable=0
 debug.sf.enable_hwc_vds=1
-ro.vendor.display.cabl=2
 
 # fastbootd
 ro.fastbootd.available=true
@@ -152,14 +145,6 @@ debug.stagefright.omx_default_rank.sw-audio=1
 
 # OEM Unlock reporting
 ro.oem_unlock_supported=1
-
-# Perf
-ro.vendor.extension_library=libqti-perfd-client.so
-ro.vendor.iocgrp.config=1
-ro.vendor.qti.sys.fw.bg_apps_limit=60
-
-# Qualcomm System Daemon
-persist.vendor.qcomsysd.enabled=1
 
 # Radio
 persist.vendor.radio.atfwd.start=false
