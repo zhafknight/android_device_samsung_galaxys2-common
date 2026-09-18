@@ -417,6 +417,9 @@ PRODUCT_PACKAGES += \
 # Partitions
 $(call inherit-product, $(SRC_TARGET_DIR)/product/non_ab_device.mk)
 
+# Audio package for Go
+$(call inherit-product, frameworks/base/data/sounds/AudioPackageGo.mk)
+
 # Since ($SRC_TARGET)/product/generic.mk is included instead of full_base.mk the device config also need to
 #  pick up the default Android Platform product locale list
 $(call inherit-product, $(SRC_TARGET_DIR)/product/languages_default.mk)
