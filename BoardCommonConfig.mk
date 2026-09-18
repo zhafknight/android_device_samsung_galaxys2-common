@@ -70,7 +70,6 @@ DEVICE_MANIFEST_FILE := $(DEVICE_PATH)/manifest.xml
 
 # Properties
 TARGET_VENDOR_PROP += $(COMMON_PATH)/vendor.prop
-TARGET_PRODUCT_PROP += $(COMMON_PATH)/product.prop
 
 # Bionic
 TARGET_LD_SHIM_LIBS := \
