@@ -1,0 +1,2 @@
+# Missing DAC search access only affects atrace's optional process scan.
+dontaudit atrace self:capability dac_read_search;

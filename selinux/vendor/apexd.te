@@ -1,0 +1,2 @@
+# apexd mirrors early diagnostics to the debug kernel log device.
+allow apexd kmsg_debug_device:chr_file w_file_perms;

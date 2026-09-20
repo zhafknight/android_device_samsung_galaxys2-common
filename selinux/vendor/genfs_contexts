@@ -3,6 +3,11 @@ genfscon sysfs /devices/platform/s5p-dsim.0/s6e8aa0/backlight/panel u:object_r:s
 
 # input4 is the light sensor on smdk4210.
 genfscon sysfs /devices/virtual/input/input4/enable u:object_r:sysfs_light_sensor:s0
+genfscon sysfs /devices/virtual/input/input4/poll_delay u:object_r:sysfs_light_sensor:s0
 
 # input3 is the proximity sensor on smdk4210 (verified against its sysfs inode).
 genfscon sysfs /devices/virtual/input/input3/enable u:object_r:sysfs_proximity:s0
+
+# input2 is the gyroscope on smdk4210.
+genfscon sysfs /devices/virtual/input/input2/enable u:object_r:sysfs_gyro:s0
+genfscon sysfs /devices/virtual/input/input2/poll_delay u:object_r:sysfs_gyro:s0

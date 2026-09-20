@@ -1,0 +1,2 @@
+allow artd app_data_file:lnk_file read;
+allow artd system_app_data_file:lnk_file read;

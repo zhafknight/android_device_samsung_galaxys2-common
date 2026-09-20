@@ -10,5 +10,6 @@ allow system_app apexd:binder call;
 allow system_app installd:binder call;
 allow system_app netd:binder call;
 allow system_app vold:binder call;
+allow system_app vendor_default_prop:file { getattr open };
 
 allow system_app hal_light_default:binder call;

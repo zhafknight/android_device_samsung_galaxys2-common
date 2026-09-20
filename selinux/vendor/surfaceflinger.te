@@ -1,3 +1,4 @@
 allow surfaceflinger ion_device:chr_file write;
 allow surfaceflinger sysfs_display:dir search;
 allow surfaceflinger sysfs_display:file { open read };
+get_prop(surfaceflinger, vendor_default_prop)

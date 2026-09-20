@@ -17,3 +17,4 @@ type gps_socket, file_type;
 type gps_data_file, file_type, data_file_type, core_data_file_type;
 type sysfs_light_sensor, fs_type, sysfs_type;
 type sysfs_proximity, fs_type, sysfs_type;
+type sysfs_gyro, fs_type, sysfs_type;
