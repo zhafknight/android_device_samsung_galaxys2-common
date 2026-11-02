@@ -26,14 +26,14 @@
  */
 
 // For GloveMode and StylusMode
-#define TSP_CMD_LIST_NODE "NOT_SUPPORTED"
-#define TSP_CMD_RESULT_NODE "NOT_SUPPORTED"
-#define TSP_CMD_NODE "NOT_SUPPORTED"
+#define TSP_CMD_LIST_NODE "/sys/class/sec/tsp/cmd_list"
+#define TSP_CMD_RESULT_NODE "/sys/class/sec/tsp/cmd_result"
+#define TSP_CMD_NODE "/sys/class/sec/tsp/cmd"
 
 // For KeyDisabler
 #define KEY_DISABLER_NODE "/sys/class/sec/sec_touchkey/keypad_enable"
 
 // For TouchscreenGesture
-#define EPEN_GESTURE_NODE "NOT_SUPPORTED"
+#define EPEN_GESTURE_NODE "/sys/class/sec/sec_epen/epen_gestures"
 
 #endif  // SAMSUNG_TOUCH_H
