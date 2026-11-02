@@ -149,9 +149,26 @@ BOARD_USE_YAMAHA_MC1N2_AUDIO := true
 USE_XML_AUDIO_POLICY_CONF := 1
 
 # RIL
+BOARD_MOBILEDATA_INTERFACE_NAME := "pdp0"
 BOARD_PROVIDES_LIBRIL := true
 BOARD_MODEM_TYPE := xmm6260
-BOARD_RIL_CLASS := ../../../device/samsung/galaxys2-common/ril
+TARGET_SPECIFIC_HEADER_PATH += device/samsung/galaxys2-common/include
+
+ifeq ($(BOARD_VENDOR),samsung)
+ifeq ($(BOARD_PROVIDES_LIBRIL),true)
+ifneq ($(filter m7450 ss333 tss310 xmm6260 xmm6262 xmm6360 xmm7260 xmm7450,$(BOARD_MODEM_TYPE)),)
+SAMSUNG_LIBRIL_BUILD := true
+endif
+endif
+endif
+
+$(call soong_config_set,samsung_libril,build_libril,$(SAMSUNG_LIBRIL_BUILD))
+$(call soong_config_set,samsung_libril,samsung_libril_modem_type,$(BOARD_MODEM_TYPE))
+$(call soong_config_set,samsung_libril,multi_sim,$(if $(filter 2,$(SIM_COUNT)),true,false))
+$(call soong_config_set,samsung_libril,needs_video_call_field,$(if $(filter true,$(BOARD_MODEM_NEEDS_VIDEO_CALL_FIELD)),true,false))
+$(call soong_config_set,samsung_libril,needs_roaming_protocol_field,$(if $(filter true,$(BOARD_NEEDS_ROAMING_PROTOCOL_FIELD)),true,false))
+$(call soong_config_set,samsung_libril,needs_ims_type_field,$(if $(filter true,$(BOARD_NEEDS_IMS_TYPE_FIELD)),true,false))
+$(call soong_config_set,samsung_libril,disable_rild_oem_hook,$(if $(strip $(DISABLE_RILD_OEM_HOOK)),true,false))
 
 # Camera
 BOARD_CAMERA_HAVE_ISO := true
