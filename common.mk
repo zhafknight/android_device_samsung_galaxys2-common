@@ -308,6 +308,10 @@ PRODUCT_PROPERTY_OVERRIDES += \
     ro.surface_flinger.primary_display_orientation=ORIENTATION_0 \
     ro.surface_flinger.clear_slots_with_set_layer_buffer=true
 
+# Memory Optimizations
+PRODUCT_PROPERTY_OVERRIDES += \
+    ro.lmk.use_psi=false \
+    ro.lmk.low=950 
 # RIL
 PRODUCT_PACKAGES += \
     android.hardware.radio.config@1.0-service
